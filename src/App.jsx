@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { createClient } from "@supabase/supabase-js";
+import { Auth } from "@supabase/auth-ui-react";
+import { ThemeSupa } from "@supabase/auth-ui-shared";
 
 // ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
 
@@ -286,7 +288,9 @@ function TradeJournalPage() {
   async function openTrade() {
     if (!pEntry || !pTP || !pSL) return;
     setIsSubmitting(true);
-    
+
+    const { data: { user } } = await supabase.auth.getUser();
+
     const { data, error } = await supabase.from("trades").insert({
       asset: pAsset,
       direction: pDirection,
@@ -294,7 +298,8 @@ function TradeJournalPage() {
       entry_price: parseFloat(pEntry),
       tp_price: parseFloat(pTP),
       sl_price: parseFloat(pSL),
-      status: "open"
+      status: "open",
+      user_id: user?.id
     }).select().single();
 
     if (!error && data) {
@@ -700,17 +705,65 @@ function TradeJournalPage() {
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
 
 function App() {
+  const [session, setSession] = useState(null);
   const [page, setPage] = useState("calc");
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  if (!session) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
+        <div className="w-full max-w-sm border border-zinc-800 bg-zinc-900 p-6" style={mono}>
+          <h2 className="text-zinc-200 text-xs tracking-widest uppercase mb-6 text-center">Arx Auth Gateway</h2>
+          <Auth
+            supabaseClient={supabase}
+            appearance={{
+              theme: ThemeSupa,
+              variables: {
+                default: {
+                  colors: {
+                    brand: "#065f46",
+                    brandAccent: "#047857",
+                    inputText: "#e4e4e7",
+                    inputBackground: "#18181b",
+                  }
+                }
+              }
+            }}
+            theme="dark"
+            providers={[]}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 p-4 pb-12">
       <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
 
       <div className="max-w-2xl mx-auto">
-        <div className="mb-6 pt-2">
+        <div className="mb-6 pt-2 flex justify-between items-center">
           <h1 className="text-zinc-300 text-xs tracking-[0.3em] uppercase" style={mono}>
             Arx Trading Tools
           </h1>
+          <button
+            onClick={() => supabase.auth.signOut()}
+            className="text-zinc-600 hover:text-red-400 text-xs uppercase tracking-wider"
+            style={mono}
+          >
+            [ Sign Out ]
+          </button>
         </div>
 
         <Nav page={page} setPage={setPage} />
