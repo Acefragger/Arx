@@ -1,8 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { createClient } from "@supabase/supabase-js";
-import { Auth } from "@supabase/auth-ui-react";
-import { ThemeSupa } from "@supabase/auth-ui-shared";
 
 // ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
 
@@ -702,6 +700,101 @@ function TradeJournalPage() {
   );
 }
 
+function AuthGate() {
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    const { error } = isSignUp
+      ? await supabase.auth.signUp({ email, password })
+      : await supabase.auth.signInWithPassword({ email, password });
+
+    if (error) setError(error.message);
+    setLoading(false);
+  }
+
+  return (
+    <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
+      <div className="w-full max-w-sm">
+        <div className="mb-6 text-center">
+          <h1 className="text-zinc-300 text-xs tracking-[0.3em] uppercase" style={mono}>
+            Arx Trading Tools
+          </h1>
+        </div>
+
+        <div className="border border-zinc-700 bg-zinc-900">
+          <div className="border-b border-zinc-800 px-4 py-3 flex items-center justify-between">
+            <span className="text-zinc-400 text-xs tracking-widest uppercase" style={mono}>
+              {isSignUp ? "Create Account" : "Sign In"}
+            </span>
+          </div>
+
+          <form onSubmit={handleSubmit} className="p-4 space-y-3">
+            <div>
+              <div className="text-zinc-500 text-xs tracking-widest uppercase mb-1" style={mono}>Email</div>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="w-full bg-zinc-950 border border-zinc-700 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-emerald-700 tabular-nums"
+                style={mono}
+                placeholder="you@example.com"
+              />
+            </div>
+
+            <div>
+              <div className="text-zinc-500 text-xs tracking-widest uppercase mb-1" style={mono}>Password</div>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={6}
+                className="w-full bg-zinc-950 border border-zinc-700 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-emerald-700 tabular-nums"
+                style={mono}
+                placeholder="••••••••"
+              />
+            </div>
+
+            {error && (
+              <div className="px-3 py-2 border border-red-900 bg-red-950 text-red-400 text-xs" style={mono}>
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading || !email || !password}
+              className="w-full py-2.5 text-xs tracking-widest uppercase font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-emerald-950 text-emerald-400 border border-emerald-800 hover:bg-emerald-900"
+              style={mono}
+            >
+              {loading ? "..." : isSignUp ? "Create Account" : "Sign In"}
+            </button>
+          </form>
+
+          <div className="border-t border-zinc-800 px-4 py-3 text-center">
+            <button
+              onClick={() => setIsSignUp(!isSignUp)}
+              className="text-zinc-500 hover:text-zinc-300 text-xs transition-colors"
+              style={mono}
+            >
+              {isSignUp ? "Already have an account? Sign in" : "Don't have an account? Sign up"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
 
 function App() {
@@ -721,31 +814,7 @@ function App() {
   }, []);
 
   if (!session) {
-    return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
-        <div className="w-full max-w-sm border border-zinc-800 bg-zinc-900 p-6" style={mono}>
-          <h2 className="text-zinc-200 text-xs tracking-widest uppercase mb-6 text-center">Arx Auth Gateway</h2>
-          <Auth
-            supabaseClient={supabase}
-            appearance={{
-              theme: ThemeSupa,
-              variables: {
-                default: {
-                  colors: {
-                    brand: "#065f46",
-                    brandAccent: "#047857",
-                    inputText: "#e4e4e7",
-                    inputBackground: "#18181b",
-                  }
-                }
-              }
-            }}
-            theme="dark"
-            providers={[]}
-          />
-        </div>
-      </div>
-    );
+    return <AuthGate />;
   }
 
   return (
