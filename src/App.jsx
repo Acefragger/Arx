@@ -15,7 +15,7 @@ const ASSETS = {
   USDJPY: { price: 158.995, contractSize: 100000, type: "Forex", usdBase: true, pipSize: 0.01 },
   NDAQ100: { price: 29475.65, contractSize: 1, type: "Index", usdBase: false, pipSize: 1 },
   US30: { price: 50405.92, contractSize: 1, type: "Index", usdBase: false, pipSize: 1 },
-  US100M: { price: 29539.25, contractSize: 1, type: "Index", usdBase: false, pipSize: 1 },
+  US100M: { price: 29539.25, contractSize: 20, type: "Index", usdBase: false, pipSize: 1 },
 };
 
 const BROKERS = ["FxPro", "JustMarkets", "Headway"];
