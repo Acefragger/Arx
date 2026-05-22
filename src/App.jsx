@@ -704,8 +704,10 @@ function AuthGate() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [otp, setOtp] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [awaitingOtp, setAwaitingOtp] = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -716,8 +718,123 @@ function AuthGate() {
       ? await supabase.auth.signUp({ email, password })
       : await supabase.auth.signInWithPassword({ email, password });
 
+    if (error) {
+      setError(error.message);
+      setLoading(false);
+    } else if (isSignUp) {
+      setAwaitingOtp(true);
+      setLoading(false);
+    }
+  }
+
+  async function verifyOtp(e) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    const { error } = await supabase.auth.verifyOtp({
+      email,
+      token: otp,
+      type: "signup"
+    });
+
+    if (error) {
+      setError(error.message);
+      setLoading(false);
+    }
+  }
+
+  async function resendOtp() {
+    setError("");
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email,
+    });
     if (error) setError(error.message);
-    setLoading(false);
+  }
+
+  if (awaitingOtp) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
+        <div className="w-full max-w-sm">
+          <div className="mb-6 text-center">
+            <h1 className="text-zinc-300 text-xs tracking-[0.3em] uppercase" style={mono}>
+              Arx Trading Tools
+            </h1>
+          </div>
+
+          <div className="border border-zinc-700 bg-zinc-900">
+            <div className="border-b border-zinc-800 px-4 py-3">
+              <span className="text-zinc-400 text-xs tracking-widest uppercase" style={mono}>
+                Verify Email
+              </span>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <div className="text-center">
+                <div className="w-12 h-12 mx-auto mb-3 border border-emerald-800 bg-emerald-950 rounded-full flex items-center justify-center">
+                  <span className="text-emerald-400 text-lg">✉</span>
+                </div>
+                <p className="text-zinc-400 text-xs" style={mono}>
+                  We sent a 6-digit code to
+                </p>
+                <p className="text-zinc-200 text-sm mt-1" style={mono}>
+                  {email}
+                </p>
+              </div>
+
+              <form onSubmit={verifyOtp} className="space-y-3">
+                <div>
+                  <div className="text-zinc-500 text-xs tracking-widest uppercase mb-1" style={mono}>Verification Code</div>
+                  <input
+                    type="text"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    required
+                    maxLength={6}
+                    className="w-full bg-zinc-950 border border-zinc-700 px-3 py-3 text-center text-2xl text-zinc-200 outline-none focus:border-emerald-700 tracking-[1em] tabular-nums"
+                    style={mono}
+                    placeholder="000000"
+                  />
+                </div>
+
+                {error && (
+                  <div className="px-3 py-2 border border-red-900 bg-red-950 text-red-400 text-xs" style={mono}>
+                    {error}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loading || otp.length !== 6}
+                  className="w-full py-2.5 text-xs tracking-widest uppercase font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-emerald-950 text-emerald-400 border border-emerald-800 hover:bg-emerald-900"
+                  style={mono}
+                >
+                  {loading ? "Verifying..." : "Verify & Continue"}
+                </button>
+              </form>
+            </div>
+
+            <div className="border-t border-zinc-800 px-4 py-3 flex items-center justify-between">
+              <button
+                onClick={resendOtp}
+                className="text-zinc-500 hover:text-zinc-300 text-xs transition-colors"
+                style={mono}
+              >
+                Resend code
+              </button>
+              <button
+                onClick={() => { setAwaitingOtp(false); setOtp(""); setError(""); }}
+                className="text-zinc-500 hover:text-zinc-300 text-xs transition-colors"
+                style={mono}
+              >
+                Back to sign up
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
