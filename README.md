@@ -1,16 +1,26 @@
-# React + Vite
+# Arx — Forex/CFD Trading Journal
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**Live demo:** [arx-trading.vercel.app](https://arx-trading.vercel.app)
 
-Currently, two official plugins are available:
+Arx is a full-stack trading journal built to replace scattered spreadsheets and broker exports with a single, structured place to log and review trades. It's built for retail forex/CFD traders who need to track performance across multiple instruments and brokers without doing manual math for every position.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## What it does
 
-## React Compiler
+- **Trade logging** — records trades across multiple instruments (GBPUSD, USDJPY, NDAQ100, US30, US100M) and brokers (FxPro, JustMarkets, Headway), each with different contract sizes and margin rules.
+- **Margin calculator** — computes margin requirements per instrument/broker combination instead of relying on a single hard-coded formula, since pip values, contract sizes, and leverage all vary by broker.
+- **Analytics dashboard** — visualizes trade history and performance over time using Recharts, so patterns (win rate, drawdown, exposure by instrument) are visible at a glance instead of buried in a spreadsheet.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Why
 
-## Expanding the ESLint configuration
+Most retail traders track trades in spreadsheets or rely on whatever export their broker gives them. Neither handles multi-broker, multi-instrument margin math well, and neither gives a real performance view without manual charting. Arx exists to close that gap for personal use, and to enforce good record-keeping discipline around a live trading strategy.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Stack
+
+- **Frontend:** React + Vite, JavaScript
+- **Backend/Data:** Supabase (Postgres, auth)
+- **Visualization:** Recharts
+- **Styling:** Tailwind CSS
+
+## Status
+
+Actively used as a personal trading journal; core logging, margin calculation, and dashboard views are functional. Deployed on Vercel.
