@@ -10,19 +10,22 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ─── DATA ────────────────────────────────────────────────────────────────────
 
+// base/quote: ISO currency codes for forex pairs, used to auto-convert margin
+// and pip value into USD via getUsdRate() below. null base = value already
+// denominated in USD at its own price (metals, indices).
 const ASSETS = {
-  GBPUSD: { price: 1.34308, contractSize: 100000, type: "Forex", usdBase: false, pipSize: 0.0001 },
-  USDJPY: { price: 158.995, contractSize: 100000, type: "Forex", usdBase: true, pipSize: 0.01 },
-  EURUSD: { price: 1.0842, contractSize: 100000, type: "Forex", usdBase: false, pipSize: 0.0001 },
-  USDCAD: { price: 1.3712, contractSize: 100000, type: "Forex", usdBase: true, pipSize: 0.0001 },
-  USDCHF: { price: 0.8821, contractSize: 100000, type: "Forex", usdBase: true, pipSize: 0.0001 },
-  AUDUSD: { price: 0.6512, contractSize: 100000, type: "Forex", usdBase: false, pipSize: 0.0001 },
-  NZDUSD: { price: 0.5978, contractSize: 100000, type: "Forex", usdBase: false, pipSize: 0.0001 },
-  GBPJPY: { price: 195.42, contractSize: 100000, type: "Forex", usdBase: false, pipSize: 0.01 },
-  XAUUSD: { price: 3350.0, contractSize: 100, type: "Metal", usdBase: true, pipSize: 0.01 },
-  NDAQ100: { price: 29475.65, contractSize: 10, type: "Index", usdBase: false, pipSize: 1 },
-  US30: { price: 50405.92, contractSize: 1, type: "Index", usdBase: false, pipSize: 1 },
-  US100M: { price: 29539.25, contractSize: 20, type: "Index", usdBase: false, pipSize: 1 },
+  GBPUSD: { price: 1.34308, contractSize: 100000, type: "Forex", base: "GBP", quote: "USD", pipSize: 0.0001 },
+  USDJPY: { price: 158.995, contractSize: 100000, type: "Forex", base: "USD", quote: "JPY", pipSize: 0.01 },
+  EURUSD: { price: 1.0842, contractSize: 100000, type: "Forex", base: "EUR", quote: "USD", pipSize: 0.0001 },
+  USDCAD: { price: 1.3712, contractSize: 100000, type: "Forex", base: "USD", quote: "CAD", pipSize: 0.0001 },
+  USDCHF: { price: 0.8821, contractSize: 100000, type: "Forex", base: "USD", quote: "CHF", pipSize: 0.0001 },
+  AUDUSD: { price: 0.6512, contractSize: 100000, type: "Forex", base: "AUD", quote: "USD", pipSize: 0.0001 },
+  NZDUSD: { price: 0.5978, contractSize: 100000, type: "Forex", base: "NZD", quote: "USD", pipSize: 0.0001 },
+  GBPJPY: { price: 195.42, contractSize: 100000, type: "Forex", base: "GBP", quote: "JPY", pipSize: 0.01 },
+  XAUUSD: { price: 3350.0, contractSize: 100, type: "Metal", base: null, quote: "USD", pipSize: 0.01 },
+  NDAQ100: { price: 29475.65, contractSize: 10, type: "Index", base: null, quote: "USD", pipSize: 1 },
+  US30: { price: 50405.92, contractSize: 1, type: "Index", base: null, quote: "USD", pipSize: 1 },
+  US100M: { price: 29539.25, contractSize: 20, type: "Index", base: null, quote: "USD", pipSize: 1 },
 };
 
 const BROKERS = ["FxPro", "JustMarkets", "Headway", "Deriv"];
@@ -46,17 +49,30 @@ function getEffectiveLeverage(broker, assetType, leverage) {
   return leverage;
 }
 
+// Looks up the USD value of one unit of a currency using whichever ASSETS
+// pair quotes it (either CODEUSD directly, or the inverse of USDCODE).
+// Falls back to 1 (treats as USD) if no pair is defined for that currency.
+function getUsdRate(currencyCode) {
+  if (!currencyCode || currencyCode === "USD") return 1;
+  const direct = ASSETS[`${currencyCode}USD`];
+  if (direct) return direct.price;
+  const inverse = ASSETS[`USD${currencyCode}`];
+  if (inverse) return 1 / inverse.price;
+  return 1;
+}
+
 function calcMargin(asset, price, lotSize, effectiveLeverage) {
   if (effectiveLeverage === "Unlimited") return 0;
-  const { contractSize, usdBase } = asset;
-  if (usdBase) return (lotSize * contractSize) / effectiveLeverage;
-  return (lotSize * contractSize * price) / effectiveLeverage;
+  const { contractSize, base } = asset;
+  // Metals/indices (base: null) are already valued in USD at their own price.
+  const baseRateUsd = base ? getUsdRate(base) : price;
+  return (lotSize * contractSize * baseRateUsd) / effectiveLeverage;
 }
 
 function calcPipValue(asset, price, lotSize) {
-  const { contractSize, pipSize, usdBase } = asset;
-  if (usdBase) return (pipSize * contractSize * lotSize) / price;
-  return pipSize * contractSize * lotSize;
+  const { contractSize, pipSize, quote } = asset;
+  const quoteRateUsd = getUsdRate(quote);
+  return pipSize * contractSize * lotSize * quoteRateUsd;
 }
 
 function calcPnL(asset, entry, exit, lotSize, direction) {
