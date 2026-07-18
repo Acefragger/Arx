@@ -52,7 +52,7 @@ function loadLeverageTable() {
     // Merge over defaults so newly added brokers/assets always have a value.
     const merged = {};
     for (const broker of Object.keys(DEFAULT_LEVERAGE_TABLE)) {
-      merged[broker] = { ...DEFAULT_LEVERAGE_TABLE[broker], ...parsed[broker] };
+      merged[broker] = { ...DEFAULT_LEVERAGE_TABLE[broker], ...(parsed[broker] || {}) };
     }
     return merged;
   } catch {
@@ -96,7 +96,7 @@ function calcPipValue(asset, price, lotSize) {
 }
 
 function calcPnL(asset, entry, exit, lotSize, direction) {
-  const { pipSize } = asset;
+  const { contractSize, pipSize } = asset;
   const priceDiff = direction === "long" ? exit - entry : entry - exit;
   const pips = priceDiff / pipSize;
   const pipVal = calcPipValue(asset, entry, lotSize);
@@ -110,10 +110,14 @@ const fmtPips = (v) => `${v >= 0 ? "+" : ""}${v.toFixed(1)} pips`;
 
 // ─── SHARED UI ────────────────────────────────────────────────────────────────
 
-const mono = { fontFamily: "'IBM Plex Mono', 'Courier New', monospace" };
+// Deliberate split: UI chrome (labels, nav, buttons) uses Inter for a calm,
+// legible interface; anything numeric (prices, PnL, pips) stays in mono with
+// tabular-nums so figures align in a column — that's the one place density
+// and precision still matter on an otherwise airy, card-based layout.
+const mono = { fontFamily: "'JetBrains Mono', ui-monospace, monospace" };
 
 function Label({ children }) {
-  return <span className="text-zinc-500 text-xs tracking-widest uppercase shrink-0">{children}</span>;
+  return <span className="text-zinc-500 dark:text-zinc-500 text-xs tracking-wide font-medium shrink-0">{children}</span>;
 }
 
 function Row({ label, children }) {
@@ -125,12 +129,12 @@ function Row({ label, children }) {
   );
 }
 
-function Divider() { return <div className="border-t border-zinc-800 mx-4" />; }
+function Divider() { return <div className="border-t border-zinc-100 dark:border-zinc-800 mx-4" />; }
 
 function StyledSelect({ value, onChange, children }) {
   return (
     <select value={value} onChange={onChange} style={mono}
-      className="bg-transparent text-zinc-200 text-sm text-right outline-none cursor-pointer border-none appearance-none">
+      className="bg-transparent text-zinc-800 dark:text-zinc-200 text-sm text-right outline-none cursor-pointer border-none appearance-none">
       {children}
     </select>
   );
@@ -140,21 +144,21 @@ function StyledInput({ value, onChange, type = "number", placeholder, step, min,
   return (
     <input type={type} value={value} onChange={onChange} step={step} min={min} placeholder={placeholder}
       style={mono}
-      className={`bg-transparent text-zinc-200 text-sm text-right outline-none border-none tabular-nums ${className}`}
+      className={`bg-transparent text-zinc-800 dark:text-zinc-200 text-sm text-right outline-none border-none tabular-nums placeholder:text-zinc-400 dark:placeholder:text-zinc-600 ${className}`}
     />
   );
 }
 
 function Badge({ children, color = "zinc" }) {
   const colors = {
-    zinc: "bg-zinc-800 text-zinc-400",
-    emerald: "bg-emerald-950 text-emerald-400",
-    red: "bg-red-950 text-red-400",
-    amber: "bg-amber-950 text-amber-400",
-    blue: "bg-blue-950 text-blue-400",
+    zinc: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
+    emerald: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400",
+    red: "bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-400",
+    amber: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-400",
+    blue: "bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400",
   };
   return (
-    <span className={`text-xs px-2 py-0.5 rounded-sm font-medium tracking-wide ${colors[color]}`} style={mono}>
+    <span className={`text-xs px-2 py-0.5 rounded-md font-medium tracking-wide ${colors[color]}`} style={mono}>
       {children}
     </span>
   );
@@ -162,31 +166,60 @@ function Badge({ children, color = "zinc" }) {
 
 function SectionHeader({ children }) {
   return (
-    <div className="border border-zinc-700 border-b-0 px-4 py-3 bg-zinc-900 flex items-center justify-between">
-      <span className="text-zinc-400 text-xs tracking-widest uppercase">{children}</span>
+    <div className="px-1 pb-3 flex items-center justify-between">
+      <span className="text-zinc-900 dark:text-zinc-100 text-sm font-semibold tracking-tight">{children}</span>
     </div>
   );
 }
 
-function Block({ children, className = "" }) {
-  return <div className={`border border-zinc-700 bg-zinc-900 ${className}`}>{children}</div>;
+// accent: optional left-border color signaling category at a glance
+// (e.g. emerald = personal/active, amber = prop firm, red = failed/breached).
+function Block({ children, className = "", accent = null }) {
+  const accentBorder = {
+    emerald: "border-l-4 border-l-emerald-400 dark:border-l-emerald-500",
+    amber: "border-l-4 border-l-amber-400 dark:border-l-amber-500",
+    red: "border-l-4 border-l-red-400 dark:border-l-red-500",
+    zinc: "border-l-4 border-l-zinc-300 dark:border-l-zinc-700",
+  };
+  return (
+    <div
+      className={`rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm shadow-zinc-200/50 dark:shadow-none overflow-hidden ${accent ? accentBorder[accent] : ""} ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+function ThemeToggle({ theme, setTheme }) {
+  return (
+    <button
+      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+      className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors shrink-0"
+      aria-label="Toggle theme"
+    >
+      {theme === "dark" ? "☀" : "☾"}
+    </button>
+  );
 }
 
 // ─── NAV ──────────────────────────────────────────────────────────────────────
 
-function Nav({ page, setPage }) {
+function Nav({ page, setPage, theme, setTheme }) {
   return (
-    <div className="flex border-b border-zinc-800 mb-6" style={mono}>
-      {[["calc", "Margin Calc"], ["journal", "Trade Journal"], ["accounts", "Accounts"], ["analytics", "Analytics"], ["setups", "Setups"], ["backtest", "Backtest"], ["calendar", "Calendar"]].map(([key, label]) => (
-        <button key={key} onClick={() => setPage(key)}
-          className={`px-5 py-3 text-xs tracking-widest uppercase transition-colors ${
-            page === key
-              ? "text-emerald-400 border-b-2 border-emerald-500 -mb-px"
-              : "text-zinc-600 hover:text-zinc-400"
-          }`}>
-          {label}
-        </button>
-      ))}
+    <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 mb-6">
+      <div className="flex overflow-x-auto">
+        {[["calc", "Margin Calc"], ["journal", "Trade Journal"], ["accounts", "Accounts"], ["analytics", "Analytics"], ["setups", "Setups"], ["backtest", "Backtest"], ["calendar", "Calendar"]].map(([key, label]) => (
+          <button key={key} onClick={() => setPage(key)}
+            className={`px-4 py-3 text-xs font-medium whitespace-nowrap transition-colors ${
+              page === key
+                ? "text-amber-600 dark:text-amber-400 border-b-2 border-amber-500 -mb-px"
+                : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300"
+            }`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <ThemeToggle theme={theme} setTheme={setTheme} />
     </div>
   );
 }
@@ -268,14 +301,14 @@ function MarginCalcPage() {
               style={mono}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
-                  const v = Number.parseInt(e.target.value, 10);
-                  if (!Number.isNaN(v) && v > 0) updateCap(v);
+                  const v = parseInt(e.target.value);
+                  if (!isNaN(v) && v > 0) updateCap(v);
                   setEditingCap(false);
                 }
               }}
               onBlur={(e) => {
-                const v = Number.parseInt(e.target.value, 10);
-                if (!Number.isNaN(v) && v > 0) updateCap(v);
+                const v = parseInt(e.target.value);
+                if (!isNaN(v) && v > 0) updateCap(v);
                 setEditingCap(false);
               }}
               autoFocus
@@ -319,12 +352,12 @@ function MarginCalcPage() {
           </div>
         </div>
         <Divider />
-        <Row label="Price"><StyledInput value={price} step={0.00001} min={0.00001} onChange={(e) => setPrice(Number.parseFloat(e.target.value) || 0)} /></Row>
+        <Row label="Price"><StyledInput value={price} step={0.00001} min={0.00001} onChange={(e) => setPrice(parseFloat(e.target.value) || 0)} /></Row>
         <Divider />
-        <Row label="Lot Size"><StyledInput value={lotSize} step={0.01} min={0.01} onChange={(e) => { const v = Number.parseFloat(e.target.value); if (!Number.isNaN(v) && v >= 0.01) setLotSize(v); }} /></Row>
+        <Row label="Lot Size"><StyledInput value={lotSize} step={0.01} min={0.01} onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v >= 0.01) setLotSize(v); }} /></Row>
         <Divider />
         <Row label="Leverage">
-          <StyledSelect value={leverage} onChange={(e) => { const v = e.target.value; setLeverage(v === "Unlimited" ? "Unlimited" : Number.parseInt(v, 10)); }}>
+          <StyledSelect value={leverage} onChange={(e) => { const v = e.target.value; setLeverage(v === "Unlimited" ? "Unlimited" : parseInt(v)); }}>
             {LEVERAGE_OPTIONS.map((l) => <option key={l} value={l}>{l === "Unlimited" ? "Unlimited" : `1:${l}`}</option>)}
           </StyledSelect>
         </Row>
@@ -394,8 +427,8 @@ function TradeJournalPage() {
 
   const pAssetData = ASSETS[pAsset];
 
-  const pTP_result = pTP ? calcPnL(pAssetData, pEntry, Number.parseFloat(pTP), pLotSize, pDirection) : null;
-  const pSL_result = pSL ? calcPnL(pAssetData, pEntry, Number.parseFloat(pSL), pLotSize, pDirection) : null;
+  const pTP_result = pTP ? calcPnL(pAssetData, pEntry, parseFloat(pTP), pLotSize, pDirection) : null;
+  const pSL_result = pSL ? calcPnL(pAssetData, pEntry, parseFloat(pSL), pLotSize, pDirection) : null;
   const pipVal = calcPipValue(pAssetData, pEntry, pLotSize);
   const rrRatio = pTP_result && pSL_result && pSL_result.pnl !== 0
     ? Math.abs(pTP_result.pnl / pSL_result.pnl).toFixed(2)
@@ -411,9 +444,9 @@ function TradeJournalPage() {
       asset: pAsset,
       direction: pDirection,
       lot_size: pLotSize,
-      entry_price: Number.parseFloat(pEntry),
-      tp_price: Number.parseFloat(pTP),
-      sl_price: Number.parseFloat(pSL),
+      entry_price: parseFloat(pEntry),
+      tp_price: parseFloat(pTP),
+      sl_price: parseFloat(pSL),
       status: "open",
       user_id: user?.id,
       account_id: pAccountId || null,
@@ -436,12 +469,12 @@ function TradeJournalPage() {
     setIsSubmitting(true);
 
     const asset = ASSETS[trade.asset];
-    const { pnl, pips } = calcPnL(asset, trade.entry_price, Number.parseFloat(closePrice), trade.lot_size, trade.direction);
+    const { pnl, pips } = calcPnL(asset, trade.entry_price, parseFloat(closePrice), trade.lot_size, trade.direction);
     
     const updatePayload = {
       status: "closed",
       outcome: closeOutcome,
-      close_price: Number.parseFloat(closePrice),
+      close_price: parseFloat(closePrice),
       close_reason: closeReason || null,
       pnl,
       pips,
@@ -478,7 +511,7 @@ function TradeJournalPage() {
       .sort((a, b) => new Date(a.closed_at) - new Date(b.closed_at))
       .map((t, i) => {
         equity += t.pnl;
-        return { i: i + 1, equity: Number.parseFloat(equity.toFixed(2)), label: t.asset };
+        return { i: i + 1, equity: parseFloat(equity.toFixed(2)), label: t.asset };
       });
   }, [closed]);
 
@@ -540,16 +573,20 @@ function TradeJournalPage() {
               <div className="flex gap-2">
                 {["long", "short"].map((d) => (
                   <button key={d} onClick={() => setPDirection(d)}
-                    className={`px-3 py-1 text-xs tracking-widest uppercase rounded-sm transition-colors ${getDirButtonClass(pDirection, d)}`} style={mono}>
+                    className={`px-3 py-1 text-xs tracking-widest uppercase rounded-sm transition-colors ${
+                      pDirection === d
+                        ? d === "long" ? "bg-emerald-950 text-emerald-400" : "bg-red-950 text-red-400"
+                        : "bg-zinc-800 text-zinc-600 hover:text-zinc-400"
+                    }`} style={mono}>
                     {d === "long" ? "▲ Long" : "▼ Short"}
                   </button>
                 ))}
               </div>
             </Row>
             <Divider />
-            <Row label="Lot Size"><StyledInput value={pLotSize} step={0.01} min={0.01} onChange={(e) => { const v = Number.parseFloat(e.target.value); if (!Number.isNaN(v) && v >= 0.01) setPLotSize(v); }} /></Row>
+            <Row label="Lot Size"><StyledInput value={pLotSize} step={0.01} min={0.01} onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v >= 0.01) setPLotSize(v); }} /></Row>
             <Divider />
-            <Row label="Entry Price"><StyledInput value={pEntry} step={0.00001} onChange={(e) => setPEntry(Number.parseFloat(e.target.value) || "")} /></Row>
+            <Row label="Entry Price"><StyledInput value={pEntry} step={0.00001} onChange={(e) => setPEntry(parseFloat(e.target.value) || "")} /></Row>
             <Divider />
             <Row label="Take Profit">
               <div className="flex items-center gap-3">
@@ -813,7 +850,7 @@ function TradeJournalPage() {
               {closePrice && (() => {
                 const trade = trades.find((t) => t.id === closingId);
                 if (!trade) return null;
-                const { pnl, pips } = calcPnL(ASSETS[trade.asset], trade.entry_price, Number.parseFloat(closePrice), trade.lot_size, trade.direction);
+                const { pnl, pips } = calcPnL(ASSETS[trade.asset], trade.entry_price, parseFloat(closePrice), trade.lot_size, trade.direction);
                 return (
                   <div className={`flex items-center justify-between px-3 py-2 border ${pnl >= 0 ? "border-emerald-900 bg-emerald-950" : "border-red-900 bg-red-950"}`}>
                     <span className="text-xs tracking-widest uppercase text-zinc-500">P&L Preview</span>
@@ -1003,7 +1040,7 @@ function AuthGate() {
                 <input
                   type="text"
                   value={username}
-                  onChange={(e) => setUsername(e.target.value.replace(/\W/g, "").slice(0, 20))}
+                  onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 20))}
                   required={isSignUp}
                   className="w-full bg-zinc-950 border border-zinc-700 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-emerald-700 tabular-nums"
                   style={mono}
@@ -1051,7 +1088,7 @@ function AuthGate() {
               className="w-full py-2.5 text-xs tracking-widest uppercase font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-emerald-950 text-emerald-400 border border-emerald-800 hover:bg-emerald-900"
               style={mono}
             >
-              {loading ? "..." : (isSignUp ? "Create Account" : "Sign In")}
+              {loading ? "..." : isSignUp ? "Create Account" : "Sign In"}
             </button>
           </form>
 
@@ -1086,6 +1123,7 @@ function AccountsPage() {
   const [broker, setBroker] = useState(BROKERS[0]);
   const [accountType, setAccountType] = useState("personal");
   const [startingBalance, setStartingBalance] = useState(10000);
+  const [currency, setCurrency] = useState("USD");
 
   useEffect(() => {
     Promise.all([
@@ -1095,7 +1133,7 @@ function AccountsPage() {
       if (accRes.data) setAccounts(accRes.data);
       if (tradeRes.data) setTrades(tradeRes.data);
       setLoading(false);
-    }).finally(() => setLoading(false));
+    });
   }, []);
 
   async function createAccount() {
@@ -1107,7 +1145,8 @@ function AccountsPage() {
       name: name.trim(),
       broker,
       account_type: accountType,
-      starting_balance: Number.parseFloat(startingBalance) || 0,
+      starting_balance: parseFloat(startingBalance) || 0,
+      currency,
     }).select().single();
     if (!error && data) {
       setAccounts((a) => [data, ...a]);
@@ -1144,9 +1183,9 @@ function AccountsPage() {
 
       {!loading && accounts.map((acc) => {
         const accTrades = trades.filter((t) => t.account_id === acc.id && t.status === "closed");
-        const pnl = accTrades.reduce((sum, t) => sum + (Number.parseFloat(t.pnl) || 0), 0);
-        const balance = Number.parseFloat(acc.starting_balance) + pnl;
-        const winCount = accTrades.filter((t) => Number.parseFloat(t.pnl) > 0).length;
+        const pnl = accTrades.reduce((sum, t) => sum + (parseFloat(t.pnl) || 0), 0);
+        const balance = parseFloat(acc.starting_balance) + pnl;
+        const winCount = accTrades.filter((t) => parseFloat(t.pnl) > 0).length;
         const winRate = accTrades.length ? ((winCount / accTrades.length) * 100).toFixed(0) : null;
 
         return (
@@ -1287,8 +1326,8 @@ function groupPnL(trades, keyFn) {
     if (!key) continue;
     if (!groups[key]) groups[key] = { key, trades: 0, wins: 0, pnl: 0 };
     groups[key].trades += 1;
-    groups[key].pnl += Number.parseFloat(t.pnl) || 0;
-    if (Number.parseFloat(t.pnl) > 0) groups[key].wins += 1;
+    groups[key].pnl += parseFloat(t.pnl) || 0;
+    if (parseFloat(t.pnl) > 0) groups[key].wins += 1;
   }
   return Object.values(groups)
     .map((g) => ({ ...g, winRate: g.trades ? Math.round((g.wins / g.trades) * 100) : 0 }))
@@ -1348,18 +1387,14 @@ function AnalyticsPage() {
     );
   }
 
-  const totalPnl = trades.reduce((s, t) => s + (Number.parseFloat(t.pnl) || 0), 0);
-  const totalWins = trades.filter((t) => Number.parseFloat(t.pnl) > 0).length;
+  const totalPnl = trades.reduce((s, t) => s + (parseFloat(t.pnl) || 0), 0);
+  const totalWins = trades.filter((t) => parseFloat(t.pnl) > 0).length;
   const overallWinRate = Math.round((totalWins / trades.length) * 100);
 
   const setupNameById = Object.fromEntries(setups.map((s) => [s.id, s.name]));
   const byAsset = groupPnL(trades, (t) => t.asset);
   const bySession = groupPnL(trades, (t) => t.session);
-  const byDirection = groupPnL(trades, (t) => {
-    if (t.direction === "long") return "Long";
-    if (t.direction === "short") return "Short";
-    return null;
-  });
+  const byDirection = groupPnL(trades, (t) => t.direction === "long" ? "Long" : t.direction === "short" ? "Short" : null);
   const bySetup = groupPnL(trades, (t) => t.setup_id ? (setupNameById[t.setup_id] || "Unknown setup") : null);
   const byDayOfWeek = groupPnL(trades, (t) => {
     if (!t.closed_at) return null;
@@ -1368,7 +1403,7 @@ function AnalyticsPage() {
 
   const equityCurve = trades.reduce((acc, t) => {
     const prev = acc.length ? acc[acc.length - 1].equity : 0;
-    acc.push({ label: acc.length + 1, equity: prev + (Number.parseFloat(t.pnl) || 0) });
+    acc.push({ label: acc.length + 1, equity: prev + (parseFloat(t.pnl) || 0) });
     return acc;
   }, []);
 
@@ -1534,8 +1569,8 @@ function SetupsPage() {
                     <div key={label} className="px-4 py-3 border-b border-zinc-800">
                       <span className="text-zinc-700 text-xs tracking-widest uppercase block mb-1.5">{label}</span>
                       <ul className="space-y-1">
-                        {items.map((item) => (
-                          <li key={item} className="text-zinc-400 text-xs flex gap-2">
+                        {items.map((item, i) => (
+                          <li key={i} className="text-zinc-400 text-xs flex gap-2">
                             <span className="text-zinc-700">·</span>{item}
                           </li>
                         ))}
@@ -1654,7 +1689,7 @@ function BacktestPage() {
       setup_id: bSetupId || null,
       trade_date: bDate || null,
       result: bResult,
-      r_multiple: bR ? Number.parseFloat(bR) : null,
+      r_multiple: bR ? parseFloat(bR) : null,
       notes: bNotes.trim() || null,
     }).select().single();
     if (!error && data) {
@@ -1671,7 +1706,7 @@ function BacktestPage() {
   }
 
   const filtered = filterSetup ? backtests.filter((b) => b.setup_id === filterSetup) : backtests;
-  const totalR = filtered.reduce((s, b) => s + (Number.parseFloat(b.r_multiple) || 0), 0);
+  const totalR = filtered.reduce((s, b) => s + (parseFloat(b.r_multiple) || 0), 0);
   const wins = filtered.filter((b) => b.result === "win").length;
   const winRate = filtered.length ? Math.round((wins / filtered.length) * 100) : 0;
   const expectancy = filtered.length ? (totalR / filtered.length).toFixed(2) : "0.00";
@@ -1725,8 +1760,10 @@ function BacktestPage() {
               {b.notes && <div className="text-zinc-600 text-xs mt-1">{b.notes}</div>}
             </div>
             <div className="flex items-center gap-3 shrink-0">
-              <span className={`text-sm font-semibold tabular-nums ${getBacktestResultClass(b.result)}`} style={mono}>
-                {b.r_multiple != null ? `${Number.parseFloat(b.r_multiple) >= 0 ? "+" : ""}${b.r_multiple}R` : b.result}
+              <span className={`text-sm font-semibold tabular-nums ${
+                b.result === "win" ? "text-emerald-400" : b.result === "loss" ? "text-red-400" : "text-zinc-500"
+              }`} style={mono}>
+                {b.r_multiple != null ? `${parseFloat(b.r_multiple) >= 0 ? "+" : ""}${b.r_multiple}R` : b.result}
               </span>
               <button onClick={() => deleteBacktest(b.id)} className="text-red-600 text-xs hover:text-red-400">✕</button>
             </div>
@@ -1756,7 +1793,11 @@ function BacktestPage() {
             <div className="flex gap-2">
               {["long", "short"].map((d) => (
                 <button key={d} onClick={() => setBDirection(d)}
-                  className={`px-3 py-1 text-xs tracking-widest uppercase rounded-sm transition-colors ${getBacktestDirButtonClass(bDirection, d)}`} style={mono}>
+                  className={`px-3 py-1 text-xs tracking-widest uppercase rounded-sm transition-colors ${
+                    bDirection === d
+                      ? d === "long" ? "bg-emerald-950 text-emerald-400" : "bg-red-950 text-red-400"
+                      : "bg-zinc-800 text-zinc-600 hover:text-zinc-400"
+                  }`} style={mono}>
                   {d === "long" ? "▲ Long" : "▼ Short"}
                 </button>
               ))}
@@ -1808,6 +1849,13 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem("arx_theme") || "dark"; } catch { return "dark"; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem("arx_theme", theme); } catch {}
+  }, [theme]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -1838,43 +1886,39 @@ function App() {
   const username = session.user.user_metadata?.username || session.user.email?.split("@")[0] || "user";
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 p-4 pb-12">
-      <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-
+    <div className={theme === "dark" ? "dark" : ""}>
+    <div className="min-h-screen bg-stone-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 p-4 pb-12 transition-colors">
       <div className="max-w-2xl mx-auto">
         <div className="mb-6 pt-2 flex justify-between items-center">
-          <h1 className="text-zinc-300 text-xs tracking-[0.3em] uppercase" style={mono}>
+          <h1 className="text-zinc-800 dark:text-zinc-200 text-sm font-semibold tracking-tight">
             Arx Trading Tools
           </h1>
 
           <div className="relative">
             <button
               onClick={() => setMenuOpen(!menuOpen)}
-              className="text-zinc-400 hover:text-zinc-200 text-xs uppercase tracking-wider flex items-center gap-2 transition-colors"
-              style={mono}
+              className="text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 text-xs flex items-center gap-2 transition-colors"
             >
-              <span className="text-emerald-500">@{username}</span>
+              <span className="text-amber-600 dark:text-amber-400 font-medium">@{username}</span>
               <span>▾</span>
             </button>
 
             {menuOpen && (
-              <div className="absolute right-0 top-full mt-1 w-48 border border-zinc-700 bg-zinc-900 z-50">
-                <div className="px-4 py-2 border-b border-zinc-800">
+              <div className="absolute right-0 top-full mt-1 w-48 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-lg z-50 overflow-hidden">
+                <div className="px-4 py-2 border-b border-zinc-100 dark:border-zinc-800">
                   <span className="text-zinc-500 text-xs" style={mono}>{session.user.email}</span>
                 </div>
 
                 <button
                   onClick={() => { supabase.auth.signOut(); setMenuOpen(false); }}
-                  className="w-full text-left px-4 py-2.5 text-xs tracking-wider uppercase transition-colors text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
-                  style={mono}
+                  className="w-full text-left px-4 py-2.5 text-xs font-medium transition-colors text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800"
                 >
                   Sign Out
                 </button>
 
                 <button
                   onClick={() => { setShowDeleteConfirm(true); setMenuOpen(false); }}
-                  className="w-full text-left px-4 py-2.5 text-xs tracking-wider uppercase transition-colors text-red-500 hover:text-red-400 hover:bg-zinc-800"
-                  style={mono}
+                  className="w-full text-left px-4 py-2.5 text-xs font-medium transition-colors text-red-600 dark:text-red-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-zinc-50 dark:hover:bg-zinc-800"
                 >
                   Delete Account
                 </button>
@@ -1883,7 +1927,7 @@ function App() {
           </div>
         </div>
 
-        <Nav page={page} setPage={setPage} />
+        <Nav page={page} setPage={setPage} theme={theme} setTheme={setTheme} />
 
         {page === "calc" && <MarginCalcPage />}
         {page === "journal" && <TradeJournalPage />}
@@ -1934,6 +1978,7 @@ function App() {
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }
