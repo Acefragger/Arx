@@ -116,15 +116,15 @@ const fmtPips = (v) => {
 };
 
 // ─── SHARED UI ────────────────────────────────────────────────────────────────
+// Apple HIG dark palette: true near-black system backgrounds, systemBlue accent,
+// semantic green/red reserved strictly for PnL. UI chrome in Inter (SF Pro
+// stand-in), figures in mono with tabular-nums for column alignment.
 
-// Deliberate split: UI chrome (labels, nav, buttons) uses Inter for a calm,
-// legible interface; anything numeric (prices, PnL, pips) stays in mono with
-// tabular-nums so figures align in a column — that's the one place density
-// and precision still matter on an otherwise airy, card-based layout.
 const mono = { fontFamily: "'JetBrains Mono', ui-monospace, monospace" };
+const EASE = "cubic-bezier(0.32, 0.72, 0, 1)"; // iOS-style spring-ish ease
 
 function Label({ children }) {
-  return <span className="text-zinc-500 dark:text-zinc-500 text-xs tracking-wide font-medium shrink-0">{children}</span>;
+  return <span className="text-zinc-500 text-xs tracking-wide font-medium shrink-0">{children}</span>;
 }
 
 function Row({ label, children }) {
@@ -136,12 +136,12 @@ function Row({ label, children }) {
   );
 }
 
-function Divider() { return <div className="border-t border-zinc-100 dark:border-zinc-800 mx-4" />; }
+function Divider() { return <div className="border-t border-white/[0.06] mx-4" />; }
 
 function StyledSelect({ value, onChange, children }) {
   return (
     <select value={value} onChange={onChange} style={mono}
-      className="bg-transparent text-zinc-800 dark:text-zinc-200 text-sm text-right outline-none cursor-pointer border-none appearance-none">
+      className="bg-transparent text-zinc-100 text-sm text-right outline-none cursor-pointer border-none appearance-none transition-colors">
       {children}
     </select>
   );
@@ -151,18 +151,18 @@ function StyledInput({ value, onChange, type = "number", placeholder, step, min,
   return (
     <input type={type} value={value} onChange={onChange} step={step} min={min} placeholder={placeholder}
       style={mono}
-      className={`bg-transparent text-zinc-800 dark:text-zinc-200 text-sm text-right outline-none border-none tabular-nums placeholder:text-zinc-400 dark:placeholder:text-zinc-600 ${className}`}
+      className={`bg-transparent text-zinc-100 text-sm text-right outline-none border-none tabular-nums placeholder:text-zinc-600 transition-colors ${className}`}
     />
   );
 }
 
 function Badge({ children, color = "zinc" }) {
   const colors = {
-    zinc: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
-    emerald: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400",
-    red: "bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-400",
-    amber: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-400",
-    blue: "bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400",
+    zinc: "bg-white/[0.06] text-zinc-400",
+    emerald: "bg-[#30D158]/10 text-[#30D158]",
+    red: "bg-[#FF453A]/10 text-[#FF453A]",
+    amber: "bg-[#FF9F0A]/10 text-[#FF9F0A]",
+    blue: "bg-[#0A84FF]/10 text-[#0A84FF]",
   };
   return (
     <span className={`text-xs px-2 py-0.5 rounded-md font-medium tracking-wide ${colors[color]}`} style={mono}>
@@ -174,62 +174,104 @@ function Badge({ children, color = "zinc" }) {
 function SectionHeader({ children }) {
   return (
     <div className="px-1 pb-3 flex items-center justify-between">
-      <span className="text-zinc-900 dark:text-zinc-100 text-sm font-semibold tracking-tight">{children}</span>
+      <span className="text-zinc-100 text-base font-semibold tracking-tight">{children}</span>
     </div>
   );
 }
 
-// accent: optional left-border color signaling category at a glance
-// (e.g. emerald = personal/active, amber = prop firm, red = failed/breached).
+// accent: optional left-border color signaling category at a glance.
 function Block({ children, className = "", accent = null }) {
   const accentBorder = {
-    emerald: "border-l-4 border-l-emerald-400 dark:border-l-emerald-500",
-    amber: "border-l-4 border-l-amber-400 dark:border-l-amber-500",
-    red: "border-l-4 border-l-red-400 dark:border-l-red-500",
-    zinc: "border-l-4 border-l-zinc-300 dark:border-l-zinc-700",
+    emerald: "border-l-2 border-l-[#30D158]",
+    amber: "border-l-2 border-l-[#FF9F0A]",
+    red: "border-l-2 border-l-[#FF453A]",
+    blue: "border-l-2 border-l-[#0A84FF]",
+    zinc: "border-l-2 border-l-zinc-700",
   };
   return (
     <div
-      className={`rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm shadow-zinc-200/50 dark:shadow-none overflow-hidden ${accent ? accentBorder[accent] : ""} ${className}`}
+      className={`rounded-2xl border border-white/[0.08] bg-[#1C1C1E] overflow-hidden transition-all duration-200 hover:border-white/[0.14] ${accent ? accentBorder[accent] : ""} ${className}`}
+      style={{ transitionTimingFunction: EASE }}
     >
       {children}
     </div>
   );
 }
 
-function ThemeToggle({ theme, setTheme }) {
+// ─── SIDEBAR ──────────────────────────────────────────────────────────────────
+
+const NAV_ITEMS = [
+  ["calc", "Margin Calc", "◱"],
+  ["journal", "Trade Journal", "▤"],
+  ["accounts", "Accounts", "◈"],
+  ["analytics", "Analytics", "▲"],
+  ["setups", "Setups", "✓"],
+  ["backtest", "Backtest", "↻"],
+  ["calendar", "Calendar", "▦"],
+];
+
+function Sidebar({ page, setPage }) {
+  const [expanded, setExpanded] = useState(false);
+
   return (
-    <button
-      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-      className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors shrink-0"
-      aria-label="Toggle theme"
+    <div
+      onMouseEnter={() => setExpanded(true)}
+      onMouseLeave={() => setExpanded(false)}
+      className="fixed left-0 top-0 h-screen z-40 flex flex-col bg-[#0A0A0A] border-r border-white/[0.06] overflow-hidden"
+      style={{
+        width: expanded ? 220 : 64,
+        transition: `width 320ms ${EASE}`,
+      }}
     >
-      {theme === "dark" ? "☀" : "☾"}
-    </button>
-  );
-}
-
-// ─── NAV ──────────────────────────────────────────────────────────────────────
-
-function Nav({ page, setPage, theme, setTheme }) {
-  return (
-    <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 mb-6">
-      <div className="flex overflow-x-auto">
-        {[["calc", "Margin Calc"], ["journal", "Trade Journal"], ["accounts", "Accounts"], ["analytics", "Analytics"], ["setups", "Setups"], ["backtest", "Backtest"], ["calendar", "Calendar"]].map(([key, label]) => (
-          <button key={key} onClick={() => setPage(key)}
-            className={`px-4 py-3 text-xs font-medium whitespace-nowrap transition-colors ${
-              page === key
-                ? "text-amber-600 dark:text-amber-400 border-b-2 border-amber-500 -mb-px"
-                : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300"
-            }`}>
-            {label}
-          </button>
-        ))}
+      <div className="h-16 flex items-center px-5 shrink-0">
+        <div className="w-7 h-7 rounded-lg bg-[#0A84FF] flex items-center justify-center text-white text-xs font-bold shrink-0">A</div>
+        <span
+          className="ml-3 text-zinc-100 text-sm font-semibold whitespace-nowrap"
+          style={{ opacity: expanded ? 1 : 0, transition: `opacity 200ms ${EASE} ${expanded ? "120ms" : "0ms"}` }}
+        >
+          Arx
+        </span>
       </div>
-      <ThemeToggle theme={theme} setTheme={setTheme} />
+
+      <div className="flex-1 py-2 px-2 space-y-0.5">
+        {NAV_ITEMS.map(([key, label, icon]) => {
+          const active = page === key;
+          return (
+            <button
+              key={key}
+              onClick={() => setPage(key)}
+              className={`w-full flex items-center h-10 rounded-lg px-3 relative transition-colors duration-150 group ${
+                active ? "bg-[#0A84FF]/15 text-[#0A84FF]" : "text-zinc-500 hover:text-zinc-100 hover:bg-white/[0.05]"
+              }`}
+            >
+              {active && (
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-[#0A84FF] rounded-full" />
+              )}
+              <span className="w-5 text-center text-sm shrink-0 transition-transform duration-150 group-active:scale-90">{icon}</span>
+              <span
+                className="ml-3 text-sm font-medium whitespace-nowrap"
+                style={{ opacity: expanded ? 1 : 0, transition: `opacity 180ms ${EASE} ${expanded ? "100ms" : "0ms"}` }}
+              >
+                {label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
+
+// ─── PAGE TRANSITION WRAPPER ──────────────────────────────────────────────────
+
+function PageTransition({ pageKey, children }) {
+  return (
+    <div key={pageKey} className="animate-[fadeSlideIn_260ms_cubic-bezier(0.32,0.72,0,1)]">
+      {children}
+    </div>
+  );
+}
+
 
 // ─── PAGE 1: MARGIN CALCULATOR ────────────────────────────────────────────────
 
@@ -274,37 +316,37 @@ function MarginCalcPage() {
     <div className="w-full max-w-md mx-auto">
       <SectionHeader>Margin Calculator</SectionHeader>
 
-      <div className="border border-zinc-700 border-b-0 px-4 py-4 bg-zinc-900 flex items-center justify-between">
+      <div className="border border-white/[0.1] border-b-0 px-4 py-4 bg-[#1C1C1E] flex items-center justify-between">
         <Label>Required Margin</Label>
-        <span className={`text-2xl font-semibold tracking-tight tabular-nums ${margin === 0 ? "text-zinc-600" : "text-emerald-400"}`} style={mono}>
+        <span className={`text-2xl font-semibold tracking-tight tabular-nums ${margin === 0 ? "text-zinc-600" : "text-[#30D158]"}`} style={mono}>
           {fmt(margin)}
         </span>
       </div>
 
-      <div className="border border-zinc-700 border-b-0 px-4 py-2 bg-zinc-900 flex items-center justify-between">
+      <div className="border border-white/[0.1] border-b-0 px-4 py-2 bg-[#1C1C1E] flex items-center justify-between">
         <Label>Pip Value</Label>
-        <span className="text-zinc-300 text-sm tabular-nums" style={mono}>{fmt(pipValue)} / pip</span>
+        <span className="text-zinc-200 text-sm tabular-nums" style={mono}>{fmt(pipValue)} / pip</span>
       </div>
 
       {leverageCapped && !editingCap && (
-        <div className="border border-amber-800 border-b-0 px-4 py-2 bg-amber-950 flex items-center justify-between gap-2">
+        <div className="border border-[#FF9F0A]/30 border-b-0 px-4 py-2 bg-[#FF9F0A]/10 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span className="text-amber-500 text-xs">▲</span>
-            <span className="text-amber-400 text-xs">{broker} caps {asset.type.toLowerCase()} leverage at 1:{leverageCap}. Using 1:{leverageCap}.</span>
+            <span className="text-[#FF9F0A] text-xs">▲</span>
+            <span className="text-[#FF9F0A] text-xs">{broker} caps {asset.type.toLowerCase()} leverage at 1:{leverageCap}. Using 1:{leverageCap}.</span>
           </div>
-          <button onClick={() => setEditingCap(true)} className="text-amber-500 text-xs underline shrink-0">Edit</button>
+          <button onClick={() => setEditingCap(true)} className="text-[#FF9F0A] text-xs underline shrink-0">Edit</button>
         </div>
       )}
 
       {editingCap && (
-        <div className="border border-amber-800 border-b-0 px-4 py-2 bg-amber-950 flex items-center justify-between gap-2">
-          <span className="text-amber-400 text-xs">Cap for {broker} / {asset.type}:</span>
+        <div className="border border-[#FF9F0A]/30 border-b-0 px-4 py-2 bg-[#FF9F0A]/10 flex items-center justify-between gap-2">
+          <span className="text-[#FF9F0A] text-xs">Cap for {broker} / {asset.type}:</span>
           <div className="flex items-center gap-2">
             <input
               type="number"
               min={1}
               defaultValue={leverageCap}
-              className="w-20 bg-zinc-900 border border-amber-800 text-amber-300 text-xs px-2 py-1 tabular-nums"
+              className="w-20 bg-[#1C1C1E] border border-[#FF9F0A]/30 text-amber-300 text-xs px-2 py-1 tabular-nums"
               style={mono}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
@@ -350,7 +392,7 @@ function MarginCalcPage() {
           {asset.base && (
             <div className="flex flex-col gap-0.5">
               <span className="text-zinc-700 text-xs tracking-widest uppercase">Base</span>
-              <span className="text-amber-500 text-xs font-medium">{asset.base}</span>
+              <span className="text-[#FF9F0A] text-xs font-medium">{asset.base}</span>
             </div>
           )}
           <div className="flex flex-col gap-0.5 ml-auto">
@@ -373,13 +415,13 @@ function MarginCalcPage() {
             <Divider />
             <div className="px-4 py-2 flex items-center justify-between">
               <Label>Effective</Label>
-              <span className="text-amber-500 text-xs font-medium" style={mono}>1:{effectiveLeverage}</span>
+              <span className="text-[#FF9F0A] text-xs font-medium" style={mono}>1:{effectiveLeverage}</span>
             </div>
           </>
         )}
       </Block>
 
-      <div className="border border-zinc-700 border-t-0 px-4 py-2 bg-zinc-900 flex justify-between">
+      <div className="border border-white/[0.1] border-t-0 px-4 py-2 bg-[#1C1C1E] flex justify-between">
         <span className="text-zinc-700 text-xs" style={mono}>{lotSize} lot × {asset.contractSize.toLocaleString()} = {(lotSize * asset.contractSize).toLocaleString()} units</span>
         <span className="text-zinc-700 text-xs" style={mono}>{assetKey}</span>
       </div>
@@ -479,6 +521,7 @@ function TradeJournalPage() {
       return;
     }
     setIsSubmitting(true);
+
     const { pnl, pips } = calcPnL(asset, trade.entry_price, parseFloat(closePrice), trade.lot_size, trade.direction);
     
     const updatePayload = {
@@ -538,8 +581,8 @@ function TradeJournalPage() {
       <div className="flex gap-1" style={mono}>
         {[["planner", "Pre-Trade"], ["log", "Journal"]].map(([key, label]) => (
           <button key={key} onClick={() => setView(key)}
-            className={`px-4 py-2 text-xs tracking-widest uppercase rounded-sm transition-colors ${
-              view === key ? "bg-zinc-800 text-zinc-200" : "text-zinc-600 hover:text-zinc-400"
+            className={`px-4 py-2 text-xs tracking-widest uppercase rounded-lg transition-colors ${
+              view === key ? "bg-white/[0.06] text-zinc-100" : "text-zinc-600 hover:text-zinc-400"
             }`}>
             {label}
           </button>
@@ -583,10 +626,10 @@ function TradeJournalPage() {
               <div className="flex gap-2">
                 {["long", "short"].map((d) => (
                   <button key={d} onClick={() => setPDirection(d)}
-                    className={`px-3 py-1 text-xs tracking-widest uppercase rounded-sm transition-colors ${
+                    className={`px-3 py-1 text-xs tracking-widest uppercase rounded-lg transition-colors ${
                       pDirection === d
-                        ? d === "long" ? "bg-emerald-950 text-emerald-400" : "bg-red-950 text-red-400"
-                        : "bg-zinc-800 text-zinc-600 hover:text-zinc-400"
+                        ? d === "long" ? "bg-[#30D158]/10 text-[#30D158]" : "bg-[#FF453A]/10 text-[#FF453A]"
+                        : "bg-white/[0.06] text-zinc-600 hover:text-zinc-400"
                     }`} style={mono}>
                     {d === "long" ? "▲ Long" : "▼ Short"}
                   </button>
@@ -600,14 +643,14 @@ function TradeJournalPage() {
             <Divider />
             <Row label="Take Profit">
               <div className="flex items-center gap-3">
-                {pTP_result && <span className={`text-xs tabular-nums ${pTP_result.pnl >= 0 ? "text-emerald-400" : "text-red-400"}`} style={mono}>{fmt(pTP_result.pnl)}</span>}
+                {pTP_result && <span className={`text-xs tabular-nums ${pTP_result.pnl >= 0 ? "text-[#30D158]" : "text-[#FF453A]"}`} style={mono}>{fmt(pTP_result.pnl)}</span>}
                 <StyledInput value={pTP} placeholder="0.00000" onChange={(e) => setPTP(e.target.value)} />
               </div>
             </Row>
             <Divider />
             <Row label="Stop Loss">
               <div className="flex items-center gap-3">
-                {pSL_result && <span className={`text-xs tabular-nums ${pSL_result.pnl >= 0 ? "text-emerald-400" : "text-red-400"}`} style={mono}>{fmt(pSL_result.pnl)}</span>}
+                {pSL_result && <span className={`text-xs tabular-nums ${pSL_result.pnl >= 0 ? "text-[#30D158]" : "text-[#FF453A]"}`} style={mono}>{fmt(pSL_result.pnl)}</span>}
                 <StyledInput value={pSL} placeholder="0.00000" onChange={(e) => setPSL(e.target.value)} />
               </div>
             </Row>
@@ -621,26 +664,26 @@ function TradeJournalPage() {
                 <div className="px-4 py-2 grid grid-cols-2 gap-x-8 gap-y-3">
                   <div>
                     <div className="text-zinc-600 text-xs tracking-widest uppercase mb-1">Pip Value</div>
-                    <div className="text-zinc-300 text-sm tabular-nums" style={mono}>{fmt(pipVal)}/pip</div>
+                    <div className="text-zinc-200 text-sm tabular-nums" style={mono}>{fmt(pipVal)}/pip</div>
                   </div>
                   {rrRatio && (
                     <div>
                       <div className="text-zinc-600 text-xs tracking-widest uppercase mb-1">R:R Ratio</div>
-                      <div className="text-zinc-300 text-sm tabular-nums" style={mono}>1 : {rrRatio}</div>
+                      <div className="text-zinc-200 text-sm tabular-nums" style={mono}>1 : {rrRatio}</div>
                     </div>
                   )}
                   {pTP_result && (
                     <div>
-                      <div className="text-emerald-700 text-xs tracking-widest uppercase mb-1">TP Profit</div>
-                      <div className="text-emerald-400 text-sm tabular-nums font-medium" style={mono}>{fmt(pTP_result.pnl)}</div>
-                      <div className="text-emerald-800 text-xs mt-0.5" style={mono}>{fmtPips(pTP_result.pips)}</div>
+                      <div className="text-[#30D158]/70 text-xs tracking-widest uppercase mb-1">TP Profit</div>
+                      <div className="text-[#30D158] text-sm tabular-nums font-medium" style={mono}>{fmt(pTP_result.pnl)}</div>
+                      <div className="text-[#30D158]/50 text-xs mt-0.5" style={mono}>{fmtPips(pTP_result.pips)}</div>
                     </div>
                   )}
                   {pSL_result && (
                     <div>
-                      <div className="text-red-700 text-xs tracking-widest uppercase mb-1">SL Loss</div>
-                      <div className="text-red-400 text-sm tabular-nums font-medium" style={mono}>{fmt(pSL_result.pnl)}</div>
-                      <div className="text-red-800 text-xs mt-0.5" style={mono}>{fmtPips(pSL_result.pips)}</div>
+                      <div className="text-[#FF453A]/70 text-xs tracking-widest uppercase mb-1">SL Loss</div>
+                      <div className="text-[#FF453A] text-sm tabular-nums font-medium" style={mono}>{fmt(pSL_result.pnl)}</div>
+                      <div className="text-[#FF453A]/50 text-xs mt-0.5" style={mono}>{fmtPips(pSL_result.pips)}</div>
                     </div>
                   )}
                 </div>
@@ -650,7 +693,7 @@ function TradeJournalPage() {
 
           <button onClick={openTrade}
             disabled={!pEntry || !pTP || !pSL || isSubmitting}
-            className="w-full py-3 text-xs tracking-widest uppercase font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-emerald-950 text-emerald-400 border border-emerald-800 hover:bg-emerald-900"
+            className="w-full py-3 text-xs tracking-widest uppercase font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-[#30D158]/10 text-[#30D158] border border-[#30D158]/30 hover:bg-[#30D158]/20"
             style={mono}>
             {isSubmitting ? "Logging..." : "Log Trade as Open →"}
           </button>
@@ -668,11 +711,11 @@ function TradeJournalPage() {
                 <div className="px-4 py-3 grid grid-cols-3 divide-x divide-zinc-800">
                   <div className="pr-4">
                     <div className="text-zinc-600 text-xs tracking-widest uppercase mb-1">Total P&L</div>
-                    <div className={`text-xl font-semibold tabular-nums ${totalPnL >= 0 ? "text-emerald-400" : "text-red-400"}`} style={mono}>{fmt(totalPnL)}</div>
+                    <div className={`text-xl font-semibold tabular-nums ${totalPnL >= 0 ? "text-[#30D158]" : "text-[#FF453A]"}`} style={mono}>{fmt(totalPnL)}</div>
                   </div>
                   <div className="px-4">
                     <div className="text-zinc-600 text-xs tracking-widest uppercase mb-1">Win Rate</div>
-                    <div className="text-zinc-200 text-xl font-semibold tabular-nums" style={mono}>{winRate}%</div>
+                    <div className="text-zinc-100 text-xl font-semibold tabular-nums" style={mono}>{winRate}%</div>
                     <div className="text-zinc-600 text-xs mt-0.5" style={mono}>{wins}W / {closed.length - wins}L</div>
                   </div>
                   <div className="pl-4">
@@ -734,7 +777,7 @@ function TradeJournalPage() {
                       {t.asset || "Unknown asset"} — no longer in ASSETS config, can't compute projections
                     </span>
                     {t.status === "closed" && t.pnl != null && (
-                      <span className={`text-sm font-semibold tabular-nums ${t.pnl >= 0 ? "text-emerald-400" : "text-red-400"}`} style={mono}>
+                      <span className={`text-sm font-semibold tabular-nums ${t.pnl >= 0 ? "text-[#30D158]" : "text-[#FF453A]"}`} style={mono}>
                         {fmt(t.pnl)}
                       </span>
                     )}
@@ -749,7 +792,7 @@ function TradeJournalPage() {
                 <div className="px-4 py-3 flex items-start justify-between gap-4">
                   <div className="flex flex-col gap-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-zinc-200 text-sm font-medium" style={mono}>{t.asset}</span>
+                      <span className="text-zinc-100 text-sm font-medium" style={mono}>{t.asset}</span>
                       <Badge color={t.direction === "long" ? "emerald" : "red"}>
                         {t.direction === "long" ? "▲ Long" : "▼ Short"}
                       </Badge>
@@ -763,7 +806,7 @@ function TradeJournalPage() {
                     </span>
                   </div>
                   {t.status === "closed" && t.pnl !== null && (
-                    <div className={`text-right tabular-nums ${t.pnl >= 0 ? "text-emerald-400" : "text-red-400"}`} style={mono}>
+                    <div className={`text-right tabular-nums ${t.pnl >= 0 ? "text-[#30D158]" : "text-[#FF453A]"}`} style={mono}>
                       <div className="text-lg font-semibold">{fmt(t.pnl)}</div>
                       <div className="text-xs opacity-70">{fmtPips(t.pips)}</div>
                     </div>
@@ -775,15 +818,15 @@ function TradeJournalPage() {
                 <div className="px-4 py-2 grid grid-cols-3 gap-4 text-xs" style={mono}>
                   <div>
                     <div className="text-zinc-600 uppercase tracking-widest mb-0.5">Entry</div>
-                    <div className="text-zinc-300 tabular-nums">{t.entry_price}</div>
+                    <div className="text-zinc-200 tabular-nums">{t.entry_price}</div>
                   </div>
                   <div>
-                    <div className="text-emerald-800 uppercase tracking-widest mb-0.5">TP · {fmt(tpPnL.pnl)}</div>
-                    <div className="text-emerald-600 tabular-nums">{t.tp_price}</div>
+                    <div className="text-[#30D158]/50 uppercase tracking-widest mb-0.5">TP · {fmt(tpPnL.pnl)}</div>
+                    <div className="text-[#30D158] tabular-nums">{t.tp_price}</div>
                   </div>
                   <div>
-                    <div className="text-red-800 uppercase tracking-widest mb-0.5">SL · {fmt(slPnL.pnl)}</div>
-                    <div className="text-red-600 tabular-nums">{t.sl_price}</div>
+                    <div className="text-[#FF453A]/50 uppercase tracking-widest mb-0.5">SL · {fmt(slPnL.pnl)}</div>
+                    <div className="text-[#FF453A] tabular-nums">{t.sl_price}</div>
                   </div>
                 </div>
 
@@ -793,7 +836,7 @@ function TradeJournalPage() {
                     <div className="px-4 py-2 grid grid-cols-2 gap-4 text-xs" style={mono}>
                       <div>
                         <div className="text-zinc-600 uppercase tracking-widest mb-0.5">Close Price</div>
-                        <div className="text-zinc-300 tabular-nums">{t.close_price}</div>
+                        <div className="text-zinc-200 tabular-nums">{t.close_price}</div>
                       </div>
                       <div>
                         <div className="text-zinc-600 uppercase tracking-widest mb-0.5">Closed At</div>
@@ -814,7 +857,7 @@ function TradeJournalPage() {
                     <Divider />
                     <div className="px-4 py-2">
                       <button onClick={() => { setClosingId(t.id); setClosePrice(t.entry_price); }}
-                        className="text-xs tracking-widest uppercase text-zinc-500 hover:text-zinc-300 transition-colors"
+                        className="text-xs tracking-widest uppercase text-zinc-500 hover:text-zinc-200 transition-colors"
                         style={mono}>
                         Close Trade →
                       </button>
@@ -830,8 +873,8 @@ function TradeJournalPage() {
       {/* ── CLOSE MODAL ── */}
       {closingId !== null && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="w-full max-w-sm border border-zinc-700 bg-zinc-950" style={mono}>
-            <div className="border-b border-zinc-800 px-4 py-3 flex items-center justify-between">
+          <div className="w-full max-w-sm border border-white/[0.1] bg-black" style={mono}>
+            <div className="border-b border-white/[0.06] px-4 py-3 flex items-center justify-between">
               <span className="text-zinc-400 text-xs tracking-widest uppercase">Close Trade</span>
               <button onClick={() => setClosingId(null)} className="text-zinc-600 hover:text-zinc-400 text-xs">✕</button>
             </div>
@@ -842,12 +885,12 @@ function TradeJournalPage() {
                 <div className="flex gap-2">
                   {["TP", "SL", "Manual"].map((o) => (
                     <button key={o} onClick={() => setCloseOutcome(o)}
-                      className={`px-3 py-1.5 text-xs tracking-widest uppercase rounded-sm transition-colors flex items-center gap-1.5 ${
+                      className={`px-3 py-1.5 text-xs tracking-widest uppercase rounded-lg transition-colors flex items-center gap-1.5 ${
                         closeOutcome === o
-                          ? o === "TP" ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
-                            : o === "SL" ? "bg-red-950 text-red-400 border border-red-800"
-                            : "bg-amber-950 text-amber-400 border border-amber-800"
-                          : "bg-zinc-900 text-zinc-600 border border-zinc-800 hover:text-zinc-400"
+                          ? o === "TP" ? "bg-[#30D158]/10 text-[#30D158] border border-[#30D158]/30"
+                            : o === "SL" ? "bg-[#FF453A]/10 text-[#FF453A] border border-[#FF453A]/30"
+                            : "bg-[#FF9F0A]/10 text-[#FF9F0A] border border-[#FF9F0A]/30"
+                          : "bg-[#1C1C1E] text-zinc-600 border border-white/[0.06] hover:text-zinc-400"
                       }`}>
                       {OUTCOME_ICONS[o]} {o}
                     </button>
@@ -858,7 +901,7 @@ function TradeJournalPage() {
               <div>
                 <div className="text-zinc-500 text-xs tracking-widest uppercase mb-1">Close Price</div>
                 <input type="number" value={closePrice} onChange={(e) => setClosePrice(e.target.value)}
-                  className="w-full bg-zinc-900 border border-zinc-700 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-zinc-500 tabular-nums"
+                  className="w-full bg-[#1C1C1E] border border-white/[0.1] px-3 py-2 text-sm text-zinc-100 outline-none focus:border-zinc-500 tabular-nums"
                   style={mono} step="0.00001" />
               </div>
 
@@ -867,7 +910,7 @@ function TradeJournalPage() {
                   <div className="text-zinc-500 text-xs tracking-widest uppercase mb-1">Reason</div>
                   <textarea value={closeReason} onChange={(e) => setCloseReason(e.target.value)}
                     placeholder="e.g. News event, drawdown limit, setup invalidated..."
-                    className="w-full bg-zinc-900 border border-zinc-700 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-zinc-500 resize-none"
+                    className="w-full bg-[#1C1C1E] border border-white/[0.1] px-3 py-2 text-sm text-zinc-100 outline-none focus:border-zinc-500 resize-none"
                     style={{ ...mono, height: 72 }} />
                 </div>
               )}
@@ -880,18 +923,18 @@ function TradeJournalPage() {
                 if (!closeAsset) return null;
                 const { pnl, pips } = calcPnL(closeAsset, trade.entry_price, parseFloat(closePrice), trade.lot_size, trade.direction);
                 return (
-                  <div className={`flex items-center justify-between px-3 py-2 border ${pnl >= 0 ? "border-emerald-900 bg-emerald-950" : "border-red-900 bg-red-950"}`}>
+                  <div className={`flex items-center justify-between px-3 py-2 border ${pnl >= 0 ? "border-[#30D158]/25 bg-[#30D158]/10" : "border-[#FF453A]/25 bg-[#FF453A]/10"}`}>
                     <span className="text-xs tracking-widest uppercase text-zinc-500">P&L Preview</span>
                     <div className="text-right">
-                      <div className={`text-sm font-semibold tabular-nums ${pnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmt(pnl)}</div>
-                      <div className={`text-xs ${pnl >= 0 ? "text-emerald-700" : "text-red-700"}`}>{fmtPips(pips)}</div>
+                      <div className={`text-sm font-semibold tabular-nums ${pnl >= 0 ? "text-[#30D158]" : "text-[#FF453A]"}`}>{fmt(pnl)}</div>
+                      <div className={`text-xs ${pnl >= 0 ? "text-[#30D158]/70" : "text-[#FF453A]/70"}`}>{fmtPips(pips)}</div>
                     </div>
                   </div>
                 );
               })()}
 
               <button onClick={submitClose} disabled={!closePrice || isSubmitting}
-                className="w-full py-2.5 text-xs tracking-widest uppercase font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-zinc-800 text-zinc-200 border border-zinc-700 hover:bg-zinc-700"
+                className="w-full py-2.5 text-xs tracking-widest uppercase font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-white/[0.06] text-zinc-100 border border-white/[0.1] hover:bg-white/[0.1]"
                 style={mono}>
                 {isSubmitting ? "Closing..." : "Confirm Close"}
               </button>
@@ -963,16 +1006,16 @@ function AuthGate() {
 
   if (awaitingOtp) {
     return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-black flex items-center justify-center p-4">
         <div className="w-full max-w-sm">
           <div className="mb-6 text-center">
-            <h1 className="text-zinc-300 text-xs tracking-[0.3em] uppercase" style={mono}>
+            <h1 className="text-zinc-200 text-xs tracking-[0.3em] uppercase" style={mono}>
               Arx Trading Tools
             </h1>
           </div>
 
-          <div className="border border-zinc-700 bg-zinc-900">
-            <div className="border-b border-zinc-800 px-4 py-3">
+          <div className="border border-white/[0.1] bg-[#1C1C1E]">
+            <div className="border-b border-white/[0.06] px-4 py-3">
               <span className="text-zinc-400 text-xs tracking-widest uppercase" style={mono}>
                 Verify Email
               </span>
@@ -980,13 +1023,13 @@ function AuthGate() {
 
             <div className="p-4 space-y-4">
               <div className="text-center">
-                <div className="w-12 h-12 mx-auto mb-3 border border-emerald-800 bg-emerald-950 rounded-full flex items-center justify-center">
-                  <span className="text-emerald-400 text-lg">✉</span>
+                <div className="w-12 h-12 mx-auto mb-3 border border-[#30D158]/30 bg-[#30D158]/10 rounded-full flex items-center justify-center">
+                  <span className="text-[#30D158] text-lg">✉</span>
                 </div>
                 <p className="text-zinc-400 text-xs" style={mono}>
                   We sent a 6-digit code to
                 </p>
-                <p className="text-zinc-200 text-sm mt-1" style={mono}>
+                <p className="text-zinc-100 text-sm mt-1" style={mono}>
                   {email}
                 </p>
               </div>
@@ -1000,14 +1043,14 @@ function AuthGate() {
                     onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
                     required
                     maxLength={6}
-                    className="w-full bg-zinc-950 border border-zinc-700 px-3 py-3 text-center text-2xl text-zinc-200 outline-none focus:border-emerald-700 tracking-[1em] tabular-nums"
+                    className="w-full bg-black border border-white/[0.1] px-3 py-3 text-center text-2xl text-zinc-100 outline-none focus:border-emerald-700 tracking-[1em] tabular-nums"
                     style={mono}
                     placeholder="000000"
                   />
                 </div>
 
                 {error && (
-                  <div className="px-3 py-2 border border-red-900 bg-red-950 text-red-400 text-xs" style={mono}>
+                  <div className="px-3 py-2 border border-[#FF453A]/25 bg-[#FF453A]/10 text-[#FF453A] text-xs" style={mono}>
                     {error}
                   </div>
                 )}
@@ -1015,7 +1058,7 @@ function AuthGate() {
                 <button
                   type="submit"
                   disabled={loading || otp.length !== 6}
-                  className="w-full py-2.5 text-xs tracking-widest uppercase font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-emerald-950 text-emerald-400 border border-emerald-800 hover:bg-emerald-900"
+                  className="w-full py-2.5 text-xs tracking-widest uppercase font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-[#30D158]/10 text-[#30D158] border border-[#30D158]/30 hover:bg-[#30D158]/20"
                   style={mono}
                 >
                   {loading ? "Verifying..." : "Verify & Continue"}
@@ -1023,17 +1066,17 @@ function AuthGate() {
               </form>
             </div>
 
-            <div className="border-t border-zinc-800 px-4 py-3 flex items-center justify-between">
+            <div className="border-t border-white/[0.06] px-4 py-3 flex items-center justify-between">
               <button
                 onClick={resendOtp}
-                className="text-zinc-500 hover:text-zinc-300 text-xs transition-colors"
+                className="text-zinc-500 hover:text-zinc-200 text-xs transition-colors"
                 style={mono}
               >
                 Resend code
               </button>
               <button
                 onClick={() => { setAwaitingOtp(false); setOtp(""); setError(""); }}
-                className="text-zinc-500 hover:text-zinc-300 text-xs transition-colors"
+                className="text-zinc-500 hover:text-zinc-200 text-xs transition-colors"
                 style={mono}
               >
                 Back to sign up
@@ -1046,16 +1089,16 @@ function AuthGate() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-black flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center">
-          <h1 className="text-zinc-300 text-xs tracking-[0.3em] uppercase" style={mono}>
+          <h1 className="text-zinc-200 text-xs tracking-[0.3em] uppercase" style={mono}>
             Arx Trading Tools
           </h1>
         </div>
 
-        <div className="border border-zinc-700 bg-zinc-900">
-          <div className="border-b border-zinc-800 px-4 py-3 flex items-center justify-between">
+        <div className="border border-white/[0.1] bg-[#1C1C1E]">
+          <div className="border-b border-white/[0.06] px-4 py-3 flex items-center justify-between">
             <span className="text-zinc-400 text-xs tracking-widest uppercase" style={mono}>
               {isSignUp ? "Create Account" : "Sign In"}
             </span>
@@ -1070,7 +1113,7 @@ function AuthGate() {
                   value={username}
                   onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 20))}
                   required={isSignUp}
-                  className="w-full bg-zinc-950 border border-zinc-700 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-emerald-700 tabular-nums"
+                  className="w-full bg-black border border-white/[0.1] px-3 py-2 text-sm text-zinc-100 outline-none focus:border-emerald-700 tabular-nums"
                   style={mono}
                   placeholder="trader_01"
                 />
@@ -1084,7 +1127,7 @@ function AuthGate() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full bg-zinc-950 border border-zinc-700 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-emerald-700 tabular-nums"
+                className="w-full bg-black border border-white/[0.1] px-3 py-2 text-sm text-zinc-100 outline-none focus:border-emerald-700 tabular-nums"
                 style={mono}
                 placeholder="you@example.com"
               />
@@ -1098,14 +1141,14 @@ function AuthGate() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 minLength={6}
-                className="w-full bg-zinc-950 border border-zinc-700 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-emerald-700 tabular-nums"
+                className="w-full bg-black border border-white/[0.1] px-3 py-2 text-sm text-zinc-100 outline-none focus:border-emerald-700 tabular-nums"
                 style={mono}
                 placeholder="••••••••"
               />
             </div>
 
             {error && (
-              <div className="px-3 py-2 border border-red-900 bg-red-950 text-red-400 text-xs" style={mono}>
+              <div className="px-3 py-2 border border-[#FF453A]/25 bg-[#FF453A]/10 text-[#FF453A] text-xs" style={mono}>
                 {error}
               </div>
             )}
@@ -1113,17 +1156,17 @@ function AuthGate() {
             <button
               type="submit"
               disabled={loading || !email || !password}
-              className="w-full py-2.5 text-xs tracking-widest uppercase font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-emerald-950 text-emerald-400 border border-emerald-800 hover:bg-emerald-900"
+              className="w-full py-2.5 text-xs tracking-widest uppercase font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-[#30D158]/10 text-[#30D158] border border-[#30D158]/30 hover:bg-[#30D158]/20"
               style={mono}
             >
               {loading ? "..." : isSignUp ? "Create Account" : "Sign In"}
             </button>
           </form>
 
-          <div className="border-t border-zinc-800 px-4 py-3 text-center">
+          <div className="border-t border-white/[0.06] px-4 py-3 text-center">
             <button
               onClick={() => setIsSignUp(!isSignUp)}
-              className="text-zinc-500 hover:text-zinc-300 text-xs transition-colors"
+              className="text-zinc-500 hover:text-zinc-200 text-xs transition-colors"
               style={mono}
             >
               {isSignUp ? "Already have an account? Sign in" : "Don't have an account? Sign up"}
@@ -1204,7 +1247,7 @@ function AccountsPage() {
       {loading && <div className="text-zinc-600 text-xs px-4 py-6 text-center" style={mono}>Loading...</div>}
 
       {!loading && accounts.length === 0 && !showForm && (
-        <div className="border border-zinc-700 bg-zinc-900 px-4 py-8 text-center">
+        <div className="border border-white/[0.1] bg-[#1C1C1E] px-4 py-8 text-center">
           <p className="text-zinc-500 text-xs mb-3" style={mono}>No accounts yet.</p>
         </div>
       )}
@@ -1218,15 +1261,15 @@ function AccountsPage() {
 
         return (
           <Block key={acc.id} className="mb-3">
-            <div className="px-4 py-3 flex items-center justify-between border-b border-zinc-800">
+            <div className="px-4 py-3 flex items-center justify-between border-b border-white/[0.06]">
               <div>
-                <div className="text-zinc-200 text-sm font-medium" style={mono}>{acc.name}</div>
+                <div className="text-zinc-100 text-sm font-medium" style={mono}>{acc.name}</div>
                 <div className="text-zinc-600 text-xs" style={mono}>{acc.broker} · {acc.account_type.replace("_", " ")}</div>
               </div>
               <select
                 value={acc.status}
                 onChange={(e) => updateStatus(acc.id, e.target.value)}
-                className={`bg-zinc-900 border border-${statusColor[acc.status]}-800 text-${statusColor[acc.status]}-400 text-xs px-2 py-1 uppercase tracking-wider`}
+                className={`bg-[#1C1C1E] border border-${statusColor[acc.status]}-800 text-${statusColor[acc.status]}-400 text-xs px-2 py-1 uppercase tracking-wider`}
                 style={mono}
               >
                 {ACCOUNT_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -1234,7 +1277,7 @@ function AccountsPage() {
             </div>
             <div className="px-4 py-3 flex items-center justify-between">
               <Label>Balance</Label>
-              <span className={`text-lg font-semibold tabular-nums ${pnl >= 0 ? "text-emerald-400" : "text-red-400"}`} style={mono}>
+              <span className={`text-lg font-semibold tabular-nums ${pnl >= 0 ? "text-[#30D158]" : "text-[#FF453A]"}`} style={mono}>
                 {fmt(balance)}
               </span>
             </div>
@@ -1245,7 +1288,7 @@ function AccountsPage() {
             </div>
             <Divider />
             <div className="px-4 py-2 flex justify-end">
-              <button onClick={() => deleteAccount(acc.id)} className="text-red-500 text-xs hover:text-red-400" style={mono}>Delete</button>
+              <button onClick={() => deleteAccount(acc.id)} className="text-[#FF453A] text-xs hover:text-[#FF453A]" style={mono}>Delete</button>
             </div>
           </Block>
         );
@@ -1254,7 +1297,7 @@ function AccountsPage() {
       {!showForm && (
         <button
           onClick={() => setShowForm(true)}
-          className="w-full border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 text-xs tracking-widest uppercase py-3 transition-colors"
+          className="w-full border border-white/[0.1] bg-[#1C1C1E] hover:bg-white/[0.06] text-zinc-400 text-xs tracking-widest uppercase py-3 transition-colors"
           style={mono}
         >
           + Add Account
@@ -1282,8 +1325,8 @@ function AccountsPage() {
           </Row>
           <Divider />
           <div className="px-4 py-3 flex gap-2">
-            <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 text-xs tracking-widest uppercase bg-zinc-800 text-zinc-300 border border-zinc-700 hover:bg-zinc-700" style={mono}>Cancel</button>
-            <button onClick={createAccount} disabled={isSubmitting || !name.trim()} className="flex-1 py-2.5 text-xs tracking-widest uppercase bg-emerald-950 text-emerald-400 border border-emerald-800 hover:bg-emerald-900 disabled:opacity-50" style={mono}>
+            <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 text-xs tracking-widest uppercase bg-white/[0.06] text-zinc-200 border border-white/[0.1] hover:bg-white/[0.1]" style={mono}>Cancel</button>
+            <button onClick={createAccount} disabled={isSubmitting || !name.trim()} className="flex-1 py-2.5 text-xs tracking-widest uppercase bg-[#30D158]/10 text-[#30D158] border border-[#30D158]/30 hover:bg-[#30D158]/20 disabled:opacity-50" style={mono}>
               {isSubmitting ? "Adding..." : "Add"}
             </button>
           </div>
@@ -1306,8 +1349,8 @@ const EconomicCalendarWidget = memo(function EconomicCalendarWidget() {
     script.dataset.type = "calendar-widget";
     script.innerHTML = JSON.stringify({
       width: "100%",
-      height: "100%",
-      mode: "2",
+      height: "780",   // explicit px — "100%" collapses since the ancestor has no fixed height
+      mode: "1",        // mode 2 is Tradays' compact/mini view; 1 is the full multi-day calendar
       fw: "react",
       theme: 1,
       timezone: "Africa/Nairobi",
@@ -1316,7 +1359,7 @@ const EconomicCalendarWidget = memo(function EconomicCalendarWidget() {
   }, []);
 
   return (
-    <div ref={container} style={{ minHeight: 500 }}>
+    <div ref={container} style={{ height: 780 }}>
       <div id="economicCalendarWidget"></div>
       <div className="ecw-copyright text-zinc-700 text-xs mt-1" style={mono}>
         <a
@@ -1334,7 +1377,7 @@ const EconomicCalendarWidget = memo(function EconomicCalendarWidget() {
 
 function CalendarPage() {
   return (
-    <div className="w-full max-w-2xl mx-auto">
+    <div className="w-full max-w-3xl mx-auto">
       <SectionHeader>Economic Calendar</SectionHeader>
       <Block>
         <div className="px-2 py-2">
@@ -1366,16 +1409,16 @@ function AnalyticsTable({ title, rows }) {
   if (!rows.length) return null;
   return (
     <Block className="mb-3">
-      <div className="px-4 py-2 border-b border-zinc-800">
+      <div className="px-4 py-2 border-b border-white/[0.06]">
         <span className="text-zinc-500 text-xs tracking-widest uppercase" style={mono}>{title}</span>
       </div>
       {rows.map((r) => (
-        <div key={r.key} className="px-4 py-2 flex items-center justify-between border-b border-zinc-800 last:border-b-0">
+        <div key={r.key} className="px-4 py-2 flex items-center justify-between border-b border-white/[0.06] last:border-b-0">
           <div className="flex items-center gap-2">
-            <span className="text-zinc-300 text-xs font-medium" style={mono}>{r.key}</span>
+            <span className="text-zinc-200 text-xs font-medium" style={mono}>{r.key}</span>
             <span className="text-zinc-700 text-xs" style={mono}>{r.trades} trade{r.trades !== 1 ? "s" : ""} · {r.winRate}% win</span>
           </div>
-          <span className={`text-sm font-semibold tabular-nums ${r.pnl >= 0 ? "text-emerald-400" : "text-red-400"}`} style={mono}>
+          <span className={`text-sm font-semibold tabular-nums ${r.pnl >= 0 ? "text-[#30D158]" : "text-[#FF453A]"}`} style={mono}>
             {fmt(r.pnl)}
           </span>
         </div>
@@ -1408,7 +1451,7 @@ function AnalyticsPage() {
     return (
       <div className="w-full max-w-md mx-auto">
         <SectionHeader>Analytics</SectionHeader>
-        <div className="border border-zinc-700 bg-zinc-900 px-4 py-8 text-center">
+        <div className="border border-white/[0.1] bg-[#1C1C1E] px-4 py-8 text-center">
           <p className="text-zinc-500 text-xs" style={mono}>No closed trades yet — analytics fill in as you close trades.</p>
         </div>
       </div>
@@ -1439,20 +1482,20 @@ function AnalyticsPage() {
     <div className="w-full max-w-md mx-auto">
       <SectionHeader>Analytics</SectionHeader>
 
-      <div className="border border-zinc-700 border-b-0 px-4 py-4 bg-zinc-900 flex items-center justify-between">
+      <div className="border border-white/[0.1] border-b-0 px-4 py-4 bg-[#1C1C1E] flex items-center justify-between">
         <Label>Total PnL</Label>
-        <span className={`text-2xl font-semibold tracking-tight tabular-nums ${totalPnl >= 0 ? "text-emerald-400" : "text-red-400"}`} style={mono}>
+        <span className={`text-2xl font-semibold tracking-tight tabular-nums ${totalPnl >= 0 ? "text-[#30D158]" : "text-[#FF453A]"}`} style={mono}>
           {fmt(totalPnl)}
         </span>
       </div>
-      <div className="border border-zinc-700 border-t-0 px-4 py-2 bg-zinc-900 flex items-center justify-between mb-4">
+      <div className="border border-white/[0.1] border-t-0 px-4 py-2 bg-[#1C1C1E] flex items-center justify-between mb-4">
         <Label>Win Rate</Label>
-        <span className="text-zinc-300 text-sm tabular-nums" style={mono}>{overallWinRate}% ({trades.length} trades)</span>
+        <span className="text-zinc-200 text-sm tabular-nums" style={mono}>{overallWinRate}% ({trades.length} trades)</span>
       </div>
 
       {equityCurve.length > 1 && (
         <Block className="mb-4">
-          <div className="px-4 py-2 border-b border-zinc-800">
+          <div className="px-4 py-2 border-b border-white/[0.06]">
             <span className="text-zinc-500 text-xs tracking-widest uppercase" style={mono}>Equity Curve</span>
           </div>
           <div className="px-2 py-3" style={{ height: 160 }}>
@@ -1552,7 +1595,7 @@ function SetupsPage() {
       {loading && <div className="text-zinc-600 text-xs px-4 py-6 text-center" style={mono}>Loading...</div>}
 
       {!loading && setups.length === 0 && !showForm && (
-        <div className="border border-zinc-700 bg-zinc-900 px-4 py-8 text-center mb-4">
+        <div className="border border-white/[0.1] bg-[#1C1C1E] px-4 py-8 text-center mb-4">
           <p className="text-zinc-500 text-xs" style={mono}>No setups yet. Define your trading models here and link trades to them from the planner.</p>
         </div>
       )}
@@ -1566,9 +1609,9 @@ function SetupsPage() {
 
         return (
           <Block key={s.id} className="mb-3">
-            <button onClick={() => setExpandedId(isOpen ? null : s.id)} className="w-full px-4 py-3 flex items-center justify-between border-b border-zinc-800 text-left">
+            <button onClick={() => setExpandedId(isOpen ? null : s.id)} className="w-full px-4 py-3 flex items-center justify-between border-b border-white/[0.06] text-left">
               <div>
-                <div className="text-zinc-200 text-sm font-medium" style={mono}>{s.name}</div>
+                <div className="text-zinc-100 text-sm font-medium" style={mono}>{s.name}</div>
                 <div className="text-zinc-600 text-xs" style={mono}>
                   {[s.instrument, s.timeframe, s.session].filter(Boolean).join(" · ") || "No details set"}
                 </div>
@@ -1580,7 +1623,7 @@ function SetupsPage() {
               <span className="text-zinc-600">{setupTrades.length} closed trade{setupTrades.length !== 1 ? "s" : ""}</span>
               <div className="flex items-center gap-3">
                 {winRate !== null && <span className="text-zinc-600">{winRate}% win</span>}
-                <span className={`font-semibold ${pnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmt(pnl)}</span>
+                <span className={`font-semibold ${pnl >= 0 ? "text-[#30D158]" : "text-[#FF453A]"}`}>{fmt(pnl)}</span>
               </div>
             </div>
 
@@ -1588,13 +1631,13 @@ function SetupsPage() {
               <>
                 <Divider />
                 {s.description && (
-                  <div className="px-4 py-3 border-b border-zinc-800">
+                  <div className="px-4 py-3 border-b border-white/[0.06]">
                     <span className="text-zinc-500 text-xs">{s.description}</span>
                   </div>
                 )}
                 {[["Entry Criteria", s.entry_criteria], ["Exit Criteria", s.exit_criteria], ["Invalidations", s.invalidations]].map(([label, items]) => (
                   items && items.length > 0 && (
-                    <div key={label} className="px-4 py-3 border-b border-zinc-800">
+                    <div key={label} className="px-4 py-3 border-b border-white/[0.06]">
                       <span className="text-zinc-700 text-xs tracking-widest uppercase block mb-1.5">{label}</span>
                       <ul className="space-y-1">
                         {items.map((item, i) => (
@@ -1607,7 +1650,7 @@ function SetupsPage() {
                   )
                 ))}
                 <div className="px-4 py-2 flex justify-end">
-                  <button onClick={() => deleteSetup(s.id)} className="text-red-500 text-xs hover:text-red-400" style={mono}>Delete</button>
+                  <button onClick={() => deleteSetup(s.id)} className="text-[#FF453A] text-xs hover:text-[#FF453A]" style={mono}>Delete</button>
                 </div>
               </>
             )}
@@ -1618,7 +1661,7 @@ function SetupsPage() {
       {!showForm && (
         <button
           onClick={() => setShowForm(true)}
-          className="w-full border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 text-xs tracking-widest uppercase py-3 transition-colors"
+          className="w-full border border-white/[0.1] bg-[#1C1C1E] hover:bg-white/[0.06] text-zinc-400 text-xs tracking-widest uppercase py-3 transition-colors"
           style={mono}
         >
           + Add Setup
@@ -1643,30 +1686,30 @@ function SetupsPage() {
           <div className="px-4 py-2">
             <span className="text-zinc-700 text-xs tracking-widest uppercase block mb-1.5">Description</span>
             <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2}
-              className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs px-2 py-1.5 focus:outline-none focus:border-zinc-600" style={mono} />
+              className="w-full bg-black border border-white/[0.06] text-zinc-200 text-xs px-2 py-1.5 focus:outline-none focus:border-zinc-600" style={mono} />
           </div>
           <Divider />
           <div className="px-4 py-2">
             <span className="text-zinc-700 text-xs tracking-widest uppercase block mb-1.5">Entry Criteria (one per line)</span>
             <textarea value={entryCriteria} onChange={(e) => setEntryCriteria(e.target.value)} rows={3}
-              className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs px-2 py-1.5 focus:outline-none focus:border-zinc-600" style={mono} />
+              className="w-full bg-black border border-white/[0.06] text-zinc-200 text-xs px-2 py-1.5 focus:outline-none focus:border-zinc-600" style={mono} />
           </div>
           <Divider />
           <div className="px-4 py-2">
             <span className="text-zinc-700 text-xs tracking-widest uppercase block mb-1.5">Exit Criteria (one per line)</span>
             <textarea value={exitCriteria} onChange={(e) => setExitCriteria(e.target.value)} rows={3}
-              className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs px-2 py-1.5 focus:outline-none focus:border-zinc-600" style={mono} />
+              className="w-full bg-black border border-white/[0.06] text-zinc-200 text-xs px-2 py-1.5 focus:outline-none focus:border-zinc-600" style={mono} />
           </div>
           <Divider />
           <div className="px-4 py-2">
             <span className="text-zinc-700 text-xs tracking-widest uppercase block mb-1.5">Invalidations (one per line)</span>
             <textarea value={invalidations} onChange={(e) => setInvalidations(e.target.value)} rows={2}
-              className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs px-2 py-1.5 focus:outline-none focus:border-zinc-600" style={mono} />
+              className="w-full bg-black border border-white/[0.06] text-zinc-200 text-xs px-2 py-1.5 focus:outline-none focus:border-zinc-600" style={mono} />
           </div>
           <Divider />
           <div className="px-4 py-3 flex gap-2">
-            <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 text-xs tracking-widest uppercase bg-zinc-800 text-zinc-300 border border-zinc-700 hover:bg-zinc-700" style={mono}>Cancel</button>
-            <button onClick={createSetup} disabled={isSubmitting || !name.trim()} className="flex-1 py-2.5 text-xs tracking-widest uppercase bg-emerald-950 text-emerald-400 border border-emerald-800 hover:bg-emerald-900 disabled:opacity-50" style={mono}>
+            <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 text-xs tracking-widest uppercase bg-white/[0.06] text-zinc-200 border border-white/[0.1] hover:bg-white/[0.1]" style={mono}>Cancel</button>
+            <button onClick={createSetup} disabled={isSubmitting || !name.trim()} className="flex-1 py-2.5 text-xs tracking-widest uppercase bg-[#30D158]/10 text-[#30D158] border border-[#30D158]/30 hover:bg-[#30D158]/20 disabled:opacity-50" style={mono}>
               {isSubmitting ? "Adding..." : "Add"}
             </button>
           </div>
@@ -1754,9 +1797,9 @@ function BacktestPage() {
 
       {!loading && filtered.length > 0 && (
         <Block className="mb-4">
-          <div className="px-4 py-3 flex items-center justify-between border-b border-zinc-800">
+          <div className="px-4 py-3 flex items-center justify-between border-b border-white/[0.06]">
             <Label>Total R</Label>
-            <span className={`text-lg font-semibold tabular-nums ${totalR >= 0 ? "text-emerald-400" : "text-red-400"}`} style={mono}>
+            <span className={`text-lg font-semibold tabular-nums ${totalR >= 0 ? "text-[#30D158]" : "text-[#FF453A]"}`} style={mono}>
               {totalR >= 0 ? "+" : ""}{totalR.toFixed(2)}R
             </span>
           </div>
@@ -1770,7 +1813,7 @@ function BacktestPage() {
       {loading && <div className="text-zinc-600 text-xs px-4 py-6 text-center" style={mono}>Loading...</div>}
 
       {!loading && filtered.length === 0 && !showForm && (
-        <div className="border border-zinc-700 bg-zinc-900 px-4 py-8 text-center mb-4">
+        <div className="border border-white/[0.1] bg-[#1C1C1E] px-4 py-8 text-center mb-4">
           <p className="text-zinc-500 text-xs" style={mono}>No backtest samples logged yet.</p>
         </div>
       )}
@@ -1780,7 +1823,7 @@ function BacktestPage() {
           <div className="px-4 py-2.5 flex items-center justify-between">
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-zinc-200 text-xs font-medium" style={mono}>{b.asset}</span>
+                <span className="text-zinc-100 text-xs font-medium" style={mono}>{b.asset}</span>
                 <Badge color={b.direction === "long" ? "emerald" : "red"}>{b.direction}</Badge>
                 {b.setup_id && <span className="text-zinc-600 text-xs" style={mono}>{setupNameById[b.setup_id] || "—"}</span>}
               </div>
@@ -1789,11 +1832,11 @@ function BacktestPage() {
             </div>
             <div className="flex items-center gap-3 shrink-0">
               <span className={`text-sm font-semibold tabular-nums ${
-                b.result === "win" ? "text-emerald-400" : b.result === "loss" ? "text-red-400" : "text-zinc-500"
+                b.result === "win" ? "text-[#30D158]" : b.result === "loss" ? "text-[#FF453A]" : "text-zinc-500"
               }`} style={mono}>
                 {b.r_multiple != null ? `${parseFloat(b.r_multiple) >= 0 ? "+" : ""}${b.r_multiple}R` : b.result}
               </span>
-              <button onClick={() => deleteBacktest(b.id)} className="text-red-600 text-xs hover:text-red-400">✕</button>
+              <button onClick={() => deleteBacktest(b.id)} className="text-[#FF453A] text-xs hover:text-[#FF453A]">✕</button>
             </div>
           </div>
         </Block>
@@ -1802,7 +1845,7 @@ function BacktestPage() {
       {!showForm && (
         <button
           onClick={() => setShowForm(true)}
-          className="w-full border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 text-xs tracking-widest uppercase py-3 transition-colors mt-2"
+          className="w-full border border-white/[0.1] bg-[#1C1C1E] hover:bg-white/[0.06] text-zinc-400 text-xs tracking-widest uppercase py-3 transition-colors mt-2"
           style={mono}
         >
           + Log Backtest Sample
@@ -1821,10 +1864,10 @@ function BacktestPage() {
             <div className="flex gap-2">
               {["long", "short"].map((d) => (
                 <button key={d} onClick={() => setBDirection(d)}
-                  className={`px-3 py-1 text-xs tracking-widest uppercase rounded-sm transition-colors ${
+                  className={`px-3 py-1 text-xs tracking-widest uppercase rounded-lg transition-colors ${
                     bDirection === d
-                      ? d === "long" ? "bg-emerald-950 text-emerald-400" : "bg-red-950 text-red-400"
-                      : "bg-zinc-800 text-zinc-600 hover:text-zinc-400"
+                      ? d === "long" ? "bg-[#30D158]/10 text-[#30D158]" : "bg-[#FF453A]/10 text-[#FF453A]"
+                      : "bg-white/[0.06] text-zinc-600 hover:text-zinc-400"
                   }`} style={mono}>
                   {d === "long" ? "▲ Long" : "▼ Short"}
                 </button>
@@ -1854,12 +1897,12 @@ function BacktestPage() {
           <div className="px-4 py-2">
             <span className="text-zinc-700 text-xs tracking-widest uppercase block mb-1.5">Notes</span>
             <textarea value={bNotes} onChange={(e) => setBNotes(e.target.value)} rows={2}
-              className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs px-2 py-1.5 focus:outline-none focus:border-zinc-600" style={mono} />
+              className="w-full bg-black border border-white/[0.06] text-zinc-200 text-xs px-2 py-1.5 focus:outline-none focus:border-zinc-600" style={mono} />
           </div>
           <Divider />
           <div className="px-4 py-3 flex gap-2">
-            <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 text-xs tracking-widest uppercase bg-zinc-800 text-zinc-300 border border-zinc-700 hover:bg-zinc-700" style={mono}>Cancel</button>
-            <button onClick={addBacktest} disabled={isSubmitting} className="flex-1 py-2.5 text-xs tracking-widest uppercase bg-emerald-950 text-emerald-400 border border-emerald-800 hover:bg-emerald-900 disabled:opacity-50" style={mono}>
+            <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 text-xs tracking-widest uppercase bg-white/[0.06] text-zinc-200 border border-white/[0.1] hover:bg-white/[0.1]" style={mono}>Cancel</button>
+            <button onClick={addBacktest} disabled={isSubmitting} className="flex-1 py-2.5 text-xs tracking-widest uppercase bg-[#30D158]/10 text-[#30D158] border border-[#30D158]/30 hover:bg-[#30D158]/20 disabled:opacity-50" style={mono}>
               {isSubmitting ? "Adding..." : "Add"}
             </button>
           </div>
@@ -1877,13 +1920,6 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteError, setDeleteError] = useState("");
-  const [theme, setTheme] = useState(() => {
-    try { return localStorage.getItem("arx_theme") || "dark"; } catch { return "dark"; }
-  });
-
-  useEffect(() => {
-    try { localStorage.setItem("arx_theme", theme); } catch {}
-  }, [theme]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -1914,64 +1950,65 @@ function App() {
   const username = session.user.user_metadata?.username || session.user.email?.split("@")[0] || "user";
 
   return (
-    <div className={theme === "dark" ? "dark" : ""}>
-    <div className="min-h-screen bg-stone-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 p-4 pb-12 transition-colors">
-      <div className="max-w-2xl mx-auto">
-        <div className="mb-6 pt-2 flex justify-between items-center">
-          <h1 className="text-zinc-800 dark:text-zinc-200 text-sm font-semibold tracking-tight">
-            Arx Trading Tools
-          </h1>
+    <div className="min-h-screen bg-black text-zinc-100">
+      <Sidebar page={page} setPage={setPage} />
 
-          <div className="relative">
-            <button
-              onClick={() => setMenuOpen(!menuOpen)}
-              className="text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 text-xs flex items-center gap-2 transition-colors"
-            >
-              <span className="text-amber-600 dark:text-amber-400 font-medium">@{username}</span>
-              <span>▾</span>
-            </button>
+      <div className="pl-16 transition-[padding] duration-300" style={{ transitionTimingFunction: EASE }}>
+        <div className="max-w-3xl mx-auto p-6 pb-16">
+          <div className="mb-6 flex justify-end items-center">
+            <div className="relative">
+              <button
+                onClick={() => setMenuOpen(!menuOpen)}
+                className="text-zinc-500 hover:text-zinc-100 text-xs flex items-center gap-2 transition-colors"
+              >
+                <span className="text-[#0A84FF] font-medium">@{username}</span>
+                <span className="transition-transform duration-200" style={{ transform: menuOpen ? "rotate(180deg)" : "none" }}>▾</span>
+              </button>
 
-            {menuOpen && (
-              <div className="absolute right-0 top-full mt-1 w-48 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-lg z-50 overflow-hidden">
-                <div className="px-4 py-2 border-b border-zinc-100 dark:border-zinc-800">
-                  <span className="text-zinc-500 text-xs" style={mono}>{session.user.email}</span>
+              {menuOpen && (
+                <div
+                  className="absolute right-0 top-full mt-2 w-48 rounded-xl border border-white/[0.08] bg-[#1C1C1E] shadow-2xl shadow-black/50 z-50 overflow-hidden animate-[fadeSlideIn_180ms_cubic-bezier(0.32,0.72,0,1)]"
+                >
+                  <div className="px-4 py-2 border-b border-white/[0.06]">
+                    <span className="text-zinc-500 text-xs" style={mono}>{session.user.email}</span>
+                  </div>
+
+                  <button
+                    onClick={() => { supabase.auth.signOut(); setMenuOpen(false); }}
+                    className="w-full text-left px-4 py-2.5 text-xs font-medium transition-colors text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.05]"
+                  >
+                    Sign Out
+                  </button>
+
+                  <button
+                    onClick={() => { setShowDeleteConfirm(true); setMenuOpen(false); }}
+                    className="w-full text-left px-4 py-2.5 text-xs font-medium transition-colors text-[#FF453A] hover:bg-white/[0.05]"
+                  >
+                    Delete Account
+                  </button>
                 </div>
-
-                <button
-                  onClick={() => { supabase.auth.signOut(); setMenuOpen(false); }}
-                  className="w-full text-left px-4 py-2.5 text-xs font-medium transition-colors text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800"
-                >
-                  Sign Out
-                </button>
-
-                <button
-                  onClick={() => { setShowDeleteConfirm(true); setMenuOpen(false); }}
-                  className="w-full text-left px-4 py-2.5 text-xs font-medium transition-colors text-red-600 dark:text-red-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-zinc-50 dark:hover:bg-zinc-800"
-                >
-                  Delete Account
-                </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
+
+          <PageTransition pageKey={page}>
+            {page === "calc" && <MarginCalcPage />}
+            {page === "journal" && <TradeJournalPage />}
+            {page === "accounts" && <AccountsPage />}
+            {page === "analytics" && <AnalyticsPage />}
+            {page === "setups" && <SetupsPage />}
+            {page === "backtest" && <BacktestPage />}
+            {page === "calendar" && <CalendarPage />}
+          </PageTransition>
         </div>
-
-        <Nav page={page} setPage={setPage} theme={theme} setTheme={setTheme} />
-
-        {page === "calc" && <MarginCalcPage />}
-        {page === "journal" && <TradeJournalPage />}
-        {page === "accounts" && <AccountsPage />}
-        {page === "analytics" && <AnalyticsPage />}
-        {page === "setups" && <SetupsPage />}
-        {page === "backtest" && <BacktestPage />}
-        {page === "calendar" && <CalendarPage />}
       </div>
 
       {/* Delete Account Confirmation */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="w-full max-w-sm border border-red-900 bg-zinc-950" style={mono}>
-            <div className="border-b border-red-900 px-4 py-3 flex items-center justify-between">
-              <span className="text-red-400 text-xs tracking-widest uppercase">Delete Account</span>
+          <div className="w-full max-w-sm border border-[#FF453A]/25 bg-black" style={mono}>
+            <div className="border-b border-[#FF453A]/25 px-4 py-3 flex items-center justify-between">
+              <span className="text-[#FF453A] text-xs tracking-widest uppercase">Delete Account</span>
               <button onClick={() => { setShowDeleteConfirm(false); setDeleteError(""); }} className="text-zinc-600 hover:text-zinc-400 text-xs">✕</button>
             </div>
 
@@ -1981,7 +2018,7 @@ function App() {
               </p>
 
               {deleteError && (
-                <div className="px-3 py-2 border border-red-900 bg-red-950 text-red-400 text-xs">
+                <div className="px-3 py-2 border border-[#FF453A]/25 bg-[#FF453A]/10 text-[#FF453A] text-xs">
                   {deleteError}
                 </div>
               )}
@@ -1989,14 +2026,14 @@ function App() {
               <div className="flex gap-2">
                 <button
                   onClick={() => { setShowDeleteConfirm(false); setDeleteError(""); }}
-                  className="flex-1 py-2.5 text-xs tracking-widest uppercase font-medium transition-colors bg-zinc-800 text-zinc-200 border border-zinc-700 hover:bg-zinc-700"
+                  className="flex-1 py-2.5 text-xs tracking-widest uppercase font-medium transition-colors bg-white/[0.06] text-zinc-100 border border-white/[0.1] hover:bg-white/[0.1]"
                   style={mono}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={deleteAccount}
-                  className="flex-1 py-2.5 text-xs tracking-widest uppercase font-medium transition-colors bg-red-950 text-red-400 border border-red-800 hover:bg-red-900"
+                  className="flex-1 py-2.5 text-xs tracking-widest uppercase font-medium transition-colors bg-[#FF453A]/10 text-[#FF453A] border border-[#FF453A]/30 hover:bg-[#FF453A]/20"
                   style={mono}
                 >
                   Delete
@@ -2006,7 +2043,6 @@ function App() {
           </div>
         </div>
       )}
-    </div>
     </div>
   );
 }
