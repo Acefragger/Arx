@@ -13,22 +13,36 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const ASSETS = {
   GBPUSD: { price: 1.34308, contractSize: 100000, type: "Forex", usdBase: false, pipSize: 0.0001 },
   USDJPY: { price: 158.995, contractSize: 100000, type: "Forex", usdBase: true, pipSize: 0.01 },
+  EURUSD: { price: 1.0842, contractSize: 100000, type: "Forex", usdBase: false, pipSize: 0.0001 },
+  USDCAD: { price: 1.3712, contractSize: 100000, type: "Forex", usdBase: true, pipSize: 0.0001 },
+  USDCHF: { price: 0.8821, contractSize: 100000, type: "Forex", usdBase: true, pipSize: 0.0001 },
+  AUDUSD: { price: 0.6512, contractSize: 100000, type: "Forex", usdBase: false, pipSize: 0.0001 },
+  NZDUSD: { price: 0.5978, contractSize: 100000, type: "Forex", usdBase: false, pipSize: 0.0001 },
+  GBPJPY: { price: 195.42, contractSize: 100000, type: "Forex", usdBase: false, pipSize: 0.01 },
+  XAUUSD: { price: 3350.0, contractSize: 100, type: "Metal", usdBase: true, pipSize: 0.01 },
   NDAQ100: { price: 29475.65, contractSize: 10, type: "Index", usdBase: false, pipSize: 1 },
   US30: { price: 50405.92, contractSize: 1, type: "Index", usdBase: false, pipSize: 1 },
   US100M: { price: 29539.25, contractSize: 20, type: "Index", usdBase: false, pipSize: 1 },
 };
 
-const BROKERS = ["FxPro", "JustMarkets", "Headway"];
+const BROKERS = ["FxPro", "JustMarkets", "Headway", "Deriv"];
 const LEVERAGE_OPTIONS = [1, 10, 50, 100, 200, 500, 1000, 2000, "Unlimited"];
+
+// Retail/standard account tier caps per broker, by asset type.
+// Confirm these against your live account terms if you ever switch tiers.
+const LEVERAGE_TABLE = {
+  FxPro:       { Forex: 30,   Metal: 10,  Index: 30 },
+  JustMarkets: { Forex: 30,   Metal: 30,  Index: 30 },
+  Headway:     { Forex: 2000, Metal: 2000, Index: 400 },
+  Deriv:       { Forex: 1000, Metal: 500, Index: 400 },
+};
 
 // ─── CALC HELPERS ─────────────────────────────────────────────────────────────
 
 function getEffectiveLeverage(broker, assetType, leverage) {
-  if (leverage === "Unlimited") {
-    if (broker === "FxPro" && assetType === "Index") return 500;
-    return "Unlimited";
-  }
-  if (broker === "FxPro" && assetType === "Index" && leverage > 500) return 500;
+  const cap = LEVERAGE_TABLE[broker]?.[assetType] ?? 500;
+  if (leverage === "Unlimited") return cap;
+  if (leverage > cap) return cap;
   return leverage;
 }
 
