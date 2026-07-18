@@ -184,7 +184,9 @@ function MarginCalcPage() {
   const effectiveLeverage = getEffectiveLeverage(broker, asset.type, leverage);
   const margin = calcMargin(asset, price, lotSize, effectiveLeverage);
   const pipValue = calcPipValue(asset, price, lotSize);
-  const leverageCapped = broker === "FxPro" && asset.type === "Index" && (leverage === "Unlimited" || leverage > 500);
+  const rawLeverage = leverage === "Unlimited" ? Infinity : leverage;
+  const leverageCap = LEVERAGE_TABLE[broker]?.[asset.type] ?? 500;
+  const leverageCapped = rawLeverage > leverageCap;
 
   const handleAssetChange = (e) => {
     setAssetKey(e.target.value);
@@ -210,7 +212,7 @@ function MarginCalcPage() {
       {leverageCapped && (
         <div className="border border-amber-800 border-b-0 px-4 py-2 bg-amber-950 flex items-center gap-2">
           <span className="text-amber-500 text-xs">▲</span>
-          <span className="text-amber-400 text-xs">FxPro caps index leverage at 1:500. Using 1:500.</span>
+          <span className="text-amber-400 text-xs">{broker} caps {asset.type.toLowerCase()} leverage at 1:{leverageCap}. Using 1:{leverageCap}.</span>
         </div>
       )}
 
