@@ -103,10 +103,17 @@ function calcPnL(asset, entry, exit, lotSize, direction) {
   return { pnl: pips * pipVal, pips };
 }
 
-const fmt = (v) =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+const fmt = (v) => {
+  const n = Number(v);
+  if (v == null || isNaN(n)) return "—";
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+};
 
-const fmtPips = (v) => `${v >= 0 ? "+" : ""}${v.toFixed(1)} pips`;
+const fmtPips = (v) => {
+  const n = Number(v);
+  if (isNaN(n)) return "—";
+  return `${n >= 0 ? "+" : ""}${n.toFixed(1)} pips`;
+};
 
 // ─── SHARED UI ────────────────────────────────────────────────────────────────
 
@@ -466,9 +473,12 @@ function TradeJournalPage() {
   async function submitClose() {
     const trade = trades.find((t) => t.id === closingId);
     if (!trade || !closePrice) return;
-    setIsSubmitting(true);
-
     const asset = ASSETS[trade.asset];
+    if (!asset) {
+      alert(`"${trade.asset}" isn't in the current asset config, can't compute PnL to close this trade.`);
+      return;
+    }
+    setIsSubmitting(true);
     const { pnl, pips } = calcPnL(asset, trade.entry_price, parseFloat(closePrice), trade.lot_size, trade.direction);
     
     const updatePayload = {
@@ -497,8 +507,8 @@ function TradeJournalPage() {
 
   // ── Stats ──
   const closed = trades.filter((t) => t.status === "closed");
-  const wins = closed.filter((t) => t.pnl > 0).length;
-  const totalPnL = closed.reduce((s, t) => s + (t.pnl || 0), 0);
+  const wins = closed.filter((t) => parseFloat(t.pnl) > 0).length;
+  const totalPnL = closed.reduce((s, t) => s + (parseFloat(t.pnl) || 0), 0);
   const winRate = closed.length ? ((wins / closed.length) * 100).toFixed(1) : null;
   const outcomeCounts = { TP: 0, SL: 0, Manual: 0 };
   closed.forEach((t) => { if (t.outcome) outcomeCounts[t.outcome]++; });
@@ -510,7 +520,7 @@ function TradeJournalPage() {
       .slice()
       .sort((a, b) => new Date(a.closed_at) - new Date(b.closed_at))
       .map((t, i) => {
-        equity += t.pnl;
+        equity += parseFloat(t.pnl) || 0;
         return { i: i + 1, equity: parseFloat(equity.toFixed(2)), label: t.asset };
       });
   }, [closed]);
@@ -716,6 +726,22 @@ function TradeJournalPage() {
 
           {trades.map((t) => {
             const asset = ASSETS[t.asset];
+            if (!asset) {
+              return (
+                <Block key={t.id} className="mb-2">
+                  <div className="px-4 py-3 flex items-center justify-between gap-4">
+                    <span className="text-zinc-500 text-xs" style={mono}>
+                      {t.asset || "Unknown asset"} — no longer in ASSETS config, can't compute projections
+                    </span>
+                    {t.status === "closed" && t.pnl != null && (
+                      <span className={`text-sm font-semibold tabular-nums ${t.pnl >= 0 ? "text-emerald-400" : "text-red-400"}`} style={mono}>
+                        {fmt(t.pnl)}
+                      </span>
+                    )}
+                  </div>
+                </Block>
+              );
+            }
             const tpPnL = calcPnL(asset, t.entry_price, t.tp_price, t.lot_size, t.direction);
             const slPnL = calcPnL(asset, t.entry_price, t.sl_price, t.lot_size, t.direction);
             return (
@@ -850,7 +876,9 @@ function TradeJournalPage() {
               {closePrice && (() => {
                 const trade = trades.find((t) => t.id === closingId);
                 if (!trade) return null;
-                const { pnl, pips } = calcPnL(ASSETS[trade.asset], trade.entry_price, parseFloat(closePrice), trade.lot_size, trade.direction);
+                const closeAsset = ASSETS[trade.asset];
+                if (!closeAsset) return null;
+                const { pnl, pips } = calcPnL(closeAsset, trade.entry_price, parseFloat(closePrice), trade.lot_size, trade.direction);
                 return (
                   <div className={`flex items-center justify-between px-3 py-2 border ${pnl >= 0 ? "border-emerald-900 bg-emerald-950" : "border-red-900 bg-red-950"}`}>
                     <span className="text-xs tracking-widest uppercase text-zinc-500">P&L Preview</span>
