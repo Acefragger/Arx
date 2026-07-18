@@ -31,13 +31,15 @@ const ASSETS = {
 const BROKERS = ["FxPro", "JustMarkets", "Headway", "Deriv"];
 const LEVERAGE_OPTIONS = [1, 10, 50, 100, 200, 500, 1000, 2000, "Unlimited"];
 
-// Retail/standard account tier caps per broker, by asset type.
-// Confirm these against your live account terms if you ever switch tiers.
+// Retail/standard account tier caps per broker, by asset type (standard
+// offshore retail entity, NOT the EU/ESMA-regulated 1:30 entity).
+// Confirm exact figures on your account's contract specs page — these
+// swing by entity/region and are approximate marketing maximums.
 const LEVERAGE_TABLE = {
-  FxPro:       { Forex: 30,   Metal: 10,  Index: 30 },
-  JustMarkets: { Forex: 30,   Metal: 30,  Index: 30 },
+  FxPro:       { Forex: 500,  Metal: 100,  Index: 200 },
+  JustMarkets: { Forex: 3000, Metal: 3000, Index: 1000 },
   Headway:     { Forex: 2000, Metal: 2000, Index: 400 },
-  Deriv:       { Forex: 1000, Metal: 500, Index: 400 },
+  Deriv:       { Forex: 1000, Metal: 500,  Index: 400 },
 };
 
 // ─── CALC HELPERS ─────────────────────────────────────────────────────────────
