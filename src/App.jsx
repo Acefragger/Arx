@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef, memo } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { createClient } from "@supabase/supabase-js";
 
@@ -31,21 +31,39 @@ const ASSETS = {
 const BROKERS = ["FxPro", "JustMarkets", "Headway", "Deriv"];
 const LEVERAGE_OPTIONS = [1, 10, 50, 100, 200, 500, 1000, 2000, "Unlimited"];
 
-// Retail/standard account tier caps per broker, by asset type (standard
-// offshore retail entity, NOT the EU/ESMA-regulated 1:30 entity).
-// Confirm exact figures on your account's contract specs page — these
-// swing by entity/region and are approximate marketing maximums.
-const LEVERAGE_TABLE = {
+// Default retail/standard account tier caps per broker, by asset type
+// (standard offshore retail entity, NOT the EU/ESMA-regulated 1:30 entity).
+// These are just starting values — edit them in the Margin Calculator UI to
+// match your real account's contract specs; your edits persist in this browser.
+const DEFAULT_LEVERAGE_TABLE = {
   FxPro:       { Forex: 500,  Metal: 100,  Index: 200 },
   JustMarkets: { Forex: 3000, Metal: 3000, Index: 1000 },
   Headway:     { Forex: 2000, Metal: 2000, Index: 400 },
   Deriv:       { Forex: 1000, Metal: 500,  Index: 400 },
 };
 
+const LEVERAGE_TABLE_STORAGE_KEY = "arx_leverage_table_v1";
+
+function loadLeverageTable() {
+  try {
+    const saved = localStorage.getItem(LEVERAGE_TABLE_STORAGE_KEY);
+    if (!saved) return DEFAULT_LEVERAGE_TABLE;
+    const parsed = JSON.parse(saved);
+    // Merge over defaults so newly added brokers/assets always have a value.
+    const merged = {};
+    for (const broker of Object.keys(DEFAULT_LEVERAGE_TABLE)) {
+      merged[broker] = { ...DEFAULT_LEVERAGE_TABLE[broker], ...parsed[broker] };
+    }
+    return merged;
+  } catch {
+    return DEFAULT_LEVERAGE_TABLE;
+  }
+}
+
 // ─── CALC HELPERS ─────────────────────────────────────────────────────────────
 
-function getEffectiveLeverage(broker, assetType, leverage) {
-  const cap = LEVERAGE_TABLE[broker]?.[assetType] ?? 500;
+function getEffectiveLeverage(broker, assetType, leverage, leverageTable) {
+  const cap = leverageTable[broker]?.[assetType] ?? 500;
   if (leverage === "Unlimited") return cap;
   if (leverage > cap) return cap;
   return leverage;
@@ -78,7 +96,7 @@ function calcPipValue(asset, price, lotSize) {
 }
 
 function calcPnL(asset, entry, exit, lotSize, direction) {
-  const { contractSize, pipSize } = asset;
+  const { pipSize } = asset;
   const priceDiff = direction === "long" ? exit - entry : entry - exit;
   const pips = priceDiff / pipSize;
   const pipVal = calcPipValue(asset, entry, lotSize);
@@ -159,7 +177,7 @@ function Block({ children, className = "" }) {
 function Nav({ page, setPage }) {
   return (
     <div className="flex border-b border-zinc-800 mb-6" style={mono}>
-      {[["calc", "Margin Calc"], ["journal", "Trade Journal"]].map(([key, label]) => (
+      {[["calc", "Margin Calc"], ["journal", "Trade Journal"], ["accounts", "Accounts"], ["analytics", "Analytics"], ["setups", "Setups"], ["backtest", "Backtest"], ["calendar", "Calendar"]].map(([key, label]) => (
         <button key={key} onClick={() => setPage(key)}
           className={`px-5 py-3 text-xs tracking-widest uppercase transition-colors ${
             page === key
@@ -181,14 +199,31 @@ function MarginCalcPage() {
   const [price, setPrice] = useState(ASSETS.GBPUSD.price);
   const [lotSize, setLotSize] = useState(0.01);
   const [leverage, setLeverage] = useState("Unlimited");
+  const [leverageTable, setLeverageTable] = useState(loadLeverageTable);
+  const [editingCap, setEditingCap] = useState(false);
+
+  useEffect(() => {
+    try { localStorage.setItem(LEVERAGE_TABLE_STORAGE_KEY, JSON.stringify(leverageTable)); } catch {}
+  }, [leverageTable]);
 
   const asset = ASSETS[assetKey];
-  const effectiveLeverage = getEffectiveLeverage(broker, asset.type, leverage);
+  const effectiveLeverage = getEffectiveLeverage(broker, asset.type, leverage, leverageTable);
   const margin = calcMargin(asset, price, lotSize, effectiveLeverage);
   const pipValue = calcPipValue(asset, price, lotSize);
   const rawLeverage = leverage === "Unlimited" ? Infinity : leverage;
-  const leverageCap = LEVERAGE_TABLE[broker]?.[asset.type] ?? 500;
+  const leverageCap = leverageTable[broker]?.[asset.type] ?? 500;
   const leverageCapped = rawLeverage > leverageCap;
+
+  const updateCap = (newCap) => {
+    setLeverageTable((prev) => ({
+      ...prev,
+      [broker]: { ...prev[broker], [asset.type]: newCap },
+    }));
+  };
+
+  const resetCaps = () => {
+    setLeverageTable(DEFAULT_LEVERAGE_TABLE);
+  };
 
   const handleAssetChange = (e) => {
     setAssetKey(e.target.value);
@@ -211,10 +246,42 @@ function MarginCalcPage() {
         <span className="text-zinc-300 text-sm tabular-nums" style={mono}>{fmt(pipValue)} / pip</span>
       </div>
 
-      {leverageCapped && (
-        <div className="border border-amber-800 border-b-0 px-4 py-2 bg-amber-950 flex items-center gap-2">
-          <span className="text-amber-500 text-xs">▲</span>
-          <span className="text-amber-400 text-xs">{broker} caps {asset.type.toLowerCase()} leverage at 1:{leverageCap}. Using 1:{leverageCap}.</span>
+      {leverageCapped && !editingCap && (
+        <div className="border border-amber-800 border-b-0 px-4 py-2 bg-amber-950 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-amber-500 text-xs">▲</span>
+            <span className="text-amber-400 text-xs">{broker} caps {asset.type.toLowerCase()} leverage at 1:{leverageCap}. Using 1:{leverageCap}.</span>
+          </div>
+          <button onClick={() => setEditingCap(true)} className="text-amber-500 text-xs underline shrink-0">Edit</button>
+        </div>
+      )}
+
+      {editingCap && (
+        <div className="border border-amber-800 border-b-0 px-4 py-2 bg-amber-950 flex items-center justify-between gap-2">
+          <span className="text-amber-400 text-xs">Cap for {broker} / {asset.type}:</span>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={1}
+              defaultValue={leverageCap}
+              className="w-20 bg-zinc-900 border border-amber-800 text-amber-300 text-xs px-2 py-1 tabular-nums"
+              style={mono}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  const v = Number.parseInt(e.target.value, 10);
+                  if (!Number.isNaN(v) && v > 0) updateCap(v);
+                  setEditingCap(false);
+                }
+              }}
+              onBlur={(e) => {
+                const v = Number.parseInt(e.target.value, 10);
+                if (!Number.isNaN(v) && v > 0) updateCap(v);
+                setEditingCap(false);
+              }}
+              autoFocus
+            />
+            <button onClick={resetCaps} className="text-zinc-500 text-xs underline shrink-0">Reset all</button>
+          </div>
         </div>
       )}
 
@@ -240,20 +307,24 @@ function MarginCalcPage() {
             <span className="text-zinc-700 text-xs tracking-widest uppercase">Contract</span>
             <span className="text-zinc-400 text-xs font-medium">{asset.contractSize.toLocaleString()}</span>
           </div>
-          {asset.usdBase && (
+          {asset.base && (
             <div className="flex flex-col gap-0.5">
               <span className="text-zinc-700 text-xs tracking-widest uppercase">Base</span>
-              <span className="text-amber-500 text-xs font-medium">USD</span>
+              <span className="text-amber-500 text-xs font-medium">{asset.base}</span>
             </div>
           )}
+          <div className="flex flex-col gap-0.5 ml-auto">
+            <span className="text-zinc-700 text-xs tracking-widest uppercase">Cap</span>
+            <button onClick={() => setEditingCap(true)} className="text-zinc-400 text-xs font-medium underline text-left" style={mono}>1:{leverageCap}</button>
+          </div>
         </div>
         <Divider />
-        <Row label="Price"><StyledInput value={price} step={0.00001} min={0.00001} onChange={(e) => setPrice(parseFloat(e.target.value) || 0)} /></Row>
+        <Row label="Price"><StyledInput value={price} step={0.00001} min={0.00001} onChange={(e) => setPrice(Number.parseFloat(e.target.value) || 0)} /></Row>
         <Divider />
-        <Row label="Lot Size"><StyledInput value={lotSize} step={0.01} min={0.01} onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v >= 0.01) setLotSize(v); }} /></Row>
+        <Row label="Lot Size"><StyledInput value={lotSize} step={0.01} min={0.01} onChange={(e) => { const v = Number.parseFloat(e.target.value); if (!Number.isNaN(v) && v >= 0.01) setLotSize(v); }} /></Row>
         <Divider />
         <Row label="Leverage">
-          <StyledSelect value={leverage} onChange={(e) => { const v = e.target.value; setLeverage(v === "Unlimited" ? "Unlimited" : parseInt(v)); }}>
+          <StyledSelect value={leverage} onChange={(e) => { const v = e.target.value; setLeverage(v === "Unlimited" ? "Unlimited" : Number.parseInt(v, 10)); }}>
             {LEVERAGE_OPTIONS.map((l) => <option key={l} value={l}>{l === "Unlimited" ? "Unlimited" : `1:${l}`}</option>)}
           </StyledSelect>
         </Row>
@@ -283,6 +354,8 @@ const OUTCOME_ICONS = { TP: "✓", SL: "✕", Manual: "◎" };
 
 function TradeJournalPage() {
   const [trades, setTrades] = useState([]);
+  const [accounts, setAccounts] = useState([]);
+  const [setups, setSetups] = useState([]);
   const [view, setView] = useState("planner"); // planner | log
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -291,6 +364,14 @@ function TradeJournalPage() {
     supabase.from("trades").select("*").order("opened_at", { ascending: false })
       .then(({ data, error }) => {
         if (data && !error) setTrades(data);
+      });
+    supabase.from("accounts").select("id, name, broker").eq("status", "active").order("created_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (data && !error) setAccounts(data);
+      });
+    supabase.from("setups").select("id, name").order("created_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (data && !error) setSetups(data);
       });
   }, []);
 
@@ -301,6 +382,9 @@ function TradeJournalPage() {
   const [pTP, setPTP] = useState("");
   const [pSL, setPSL] = useState("");
   const [pLotSize, setPLotSize] = useState(0.01);
+  const [pAccountId, setPAccountId] = useState("");
+  const [pSession, setPSession] = useState("");
+  const [pSetupId, setPSetupId] = useState("");
 
   // ── Close trade modal ──
   const [closingId, setClosingId] = useState(null);
@@ -310,8 +394,8 @@ function TradeJournalPage() {
 
   const pAssetData = ASSETS[pAsset];
 
-  const pTP_result = pTP ? calcPnL(pAssetData, pEntry, parseFloat(pTP), pLotSize, pDirection) : null;
-  const pSL_result = pSL ? calcPnL(pAssetData, pEntry, parseFloat(pSL), pLotSize, pDirection) : null;
+  const pTP_result = pTP ? calcPnL(pAssetData, pEntry, Number.parseFloat(pTP), pLotSize, pDirection) : null;
+  const pSL_result = pSL ? calcPnL(pAssetData, pEntry, Number.parseFloat(pSL), pLotSize, pDirection) : null;
   const pipVal = calcPipValue(pAssetData, pEntry, pLotSize);
   const rrRatio = pTP_result && pSL_result && pSL_result.pnl !== 0
     ? Math.abs(pTP_result.pnl / pSL_result.pnl).toFixed(2)
@@ -327,11 +411,14 @@ function TradeJournalPage() {
       asset: pAsset,
       direction: pDirection,
       lot_size: pLotSize,
-      entry_price: parseFloat(pEntry),
-      tp_price: parseFloat(pTP),
-      sl_price: parseFloat(pSL),
+      entry_price: Number.parseFloat(pEntry),
+      tp_price: Number.parseFloat(pTP),
+      sl_price: Number.parseFloat(pSL),
       status: "open",
-      user_id: user?.id
+      user_id: user?.id,
+      account_id: pAccountId || null,
+      session: pSession || null,
+      setup_id: pSetupId || null,
     }).select().single();
 
     if (!error && data) {
@@ -349,12 +436,12 @@ function TradeJournalPage() {
     setIsSubmitting(true);
 
     const asset = ASSETS[trade.asset];
-    const { pnl, pips } = calcPnL(asset, trade.entry_price, parseFloat(closePrice), trade.lot_size, trade.direction);
+    const { pnl, pips } = calcPnL(asset, trade.entry_price, Number.parseFloat(closePrice), trade.lot_size, trade.direction);
     
     const updatePayload = {
       status: "closed",
       outcome: closeOutcome,
-      close_price: parseFloat(closePrice),
+      close_price: Number.parseFloat(closePrice),
       close_reason: closeReason || null,
       pnl,
       pips,
@@ -391,7 +478,7 @@ function TradeJournalPage() {
       .sort((a, b) => new Date(a.closed_at) - new Date(b.closed_at))
       .map((t, i) => {
         equity += t.pnl;
-        return { i: i + 1, equity: parseFloat(equity.toFixed(2)), label: t.asset };
+        return { i: i + 1, equity: Number.parseFloat(equity.toFixed(2)), label: t.asset };
       });
   }, [closed]);
 
@@ -428,24 +515,41 @@ function TradeJournalPage() {
               </StyledSelect>
             </Row>
             <Divider />
+            <Row label="Account">
+              <StyledSelect value={pAccountId} onChange={(e) => setPAccountId(e.target.value)}>
+                <option value="">— None —</option>
+                {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.broker})</option>)}
+              </StyledSelect>
+            </Row>
+            <Divider />
+            <Row label="Session">
+              <StyledSelect value={pSession} onChange={(e) => setPSession(e.target.value)}>
+                <option value="">— None —</option>
+                {["Asian", "London", "NY", "Overlap"].map((s) => <option key={s} value={s}>{s}</option>)}
+              </StyledSelect>
+            </Row>
+            <Divider />
+            <Row label="Setup">
+              <StyledSelect value={pSetupId} onChange={(e) => setPSetupId(e.target.value)}>
+                <option value="">— None —</option>
+                {setups.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </StyledSelect>
+            </Row>
+            <Divider />
             <Row label="Direction">
               <div className="flex gap-2">
                 {["long", "short"].map((d) => (
                   <button key={d} onClick={() => setPDirection(d)}
-                    className={`px-3 py-1 text-xs tracking-widest uppercase rounded-sm transition-colors ${
-                      pDirection === d
-                        ? d === "long" ? "bg-emerald-950 text-emerald-400" : "bg-red-950 text-red-400"
-                        : "bg-zinc-800 text-zinc-600 hover:text-zinc-400"
-                    }`} style={mono}>
+                    className={`px-3 py-1 text-xs tracking-widest uppercase rounded-sm transition-colors ${getDirButtonClass(pDirection, d)}`} style={mono}>
                     {d === "long" ? "▲ Long" : "▼ Short"}
                   </button>
                 ))}
               </div>
             </Row>
             <Divider />
-            <Row label="Lot Size"><StyledInput value={pLotSize} step={0.01} min={0.01} onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v >= 0.01) setPLotSize(v); }} /></Row>
+            <Row label="Lot Size"><StyledInput value={pLotSize} step={0.01} min={0.01} onChange={(e) => { const v = Number.parseFloat(e.target.value); if (!Number.isNaN(v) && v >= 0.01) setPLotSize(v); }} /></Row>
             <Divider />
-            <Row label="Entry Price"><StyledInput value={pEntry} step={0.00001} onChange={(e) => setPEntry(parseFloat(e.target.value) || "")} /></Row>
+            <Row label="Entry Price"><StyledInput value={pEntry} step={0.00001} onChange={(e) => setPEntry(Number.parseFloat(e.target.value) || "")} /></Row>
             <Divider />
             <Row label="Take Profit">
               <div className="flex items-center gap-3">
@@ -709,7 +813,7 @@ function TradeJournalPage() {
               {closePrice && (() => {
                 const trade = trades.find((t) => t.id === closingId);
                 if (!trade) return null;
-                const { pnl, pips } = calcPnL(ASSETS[trade.asset], trade.entry_price, parseFloat(closePrice), trade.lot_size, trade.direction);
+                const { pnl, pips } = calcPnL(ASSETS[trade.asset], trade.entry_price, Number.parseFloat(closePrice), trade.lot_size, trade.direction);
                 return (
                   <div className={`flex items-center justify-between px-3 py-2 border ${pnl >= 0 ? "border-emerald-900 bg-emerald-950" : "border-red-900 bg-red-950"}`}>
                     <span className="text-xs tracking-widest uppercase text-zinc-500">P&L Preview</span>
@@ -899,7 +1003,7 @@ function AuthGate() {
                 <input
                   type="text"
                   value={username}
-                  onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 20))}
+                  onChange={(e) => setUsername(e.target.value.replace(/\W/g, "").slice(0, 20))}
                   required={isSignUp}
                   className="w-full bg-zinc-950 border border-zinc-700 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-emerald-700 tabular-nums"
                   style={mono}
@@ -947,7 +1051,7 @@ function AuthGate() {
               className="w-full py-2.5 text-xs tracking-widest uppercase font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-emerald-950 text-emerald-400 border border-emerald-800 hover:bg-emerald-900"
               style={mono}
             >
-              {loading ? "..." : isSignUp ? "Create Account" : "Sign In"}
+              {loading ? "..." : (isSignUp ? "Create Account" : "Sign In")}
             </button>
           </form>
 
@@ -962,6 +1066,736 @@ function AuthGate() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── PAGE 3: ACCOUNTS ─────────────────────────────────────────────────────────
+
+const ACCOUNT_TYPES = ["personal", "prop_firm", "funded", "demo"];
+const ACCOUNT_STATUSES = ["active", "passed", "failed", "breached", "archived"];
+
+function AccountsPage() {
+  const [accounts, setAccounts] = useState([]);
+  const [trades, setTrades] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [name, setName] = useState("");
+  const [broker, setBroker] = useState(BROKERS[0]);
+  const [accountType, setAccountType] = useState("personal");
+  const [startingBalance, setStartingBalance] = useState(10000);
+
+  useEffect(() => {
+    Promise.all([
+      supabase.from("accounts").select("*").order("created_at", { ascending: false }),
+      supabase.from("trades").select("account_id, pnl, status"),
+    ]).then(([accRes, tradeRes]) => {
+      if (accRes.data) setAccounts(accRes.data);
+      if (tradeRes.data) setTrades(tradeRes.data);
+      setLoading(false);
+    }).finally(() => setLoading(false));
+  }, []);
+
+  async function createAccount() {
+    if (!name.trim()) return;
+    setIsSubmitting(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data, error } = await supabase.from("accounts").insert({
+      user_id: user?.id,
+      name: name.trim(),
+      broker,
+      account_type: accountType,
+      starting_balance: Number.parseFloat(startingBalance) || 0,
+    }).select().single();
+    if (!error && data) {
+      setAccounts((a) => [data, ...a]);
+      setName("");
+      setStartingBalance(10000);
+      setShowForm(false);
+    }
+    setIsSubmitting(false);
+  }
+
+  async function updateStatus(id, status) {
+    const { error } = await supabase.from("accounts").update({ status }).eq("id", id);
+    if (!error) setAccounts((a) => a.map((acc) => (acc.id === id ? { ...acc, status } : acc)));
+  }
+
+  async function deleteAccount(id) {
+    const { error } = await supabase.from("accounts").delete().eq("id", id);
+    if (!error) setAccounts((a) => a.filter((acc) => acc.id !== id));
+  }
+
+  const statusColor = { active: "emerald", passed: "emerald", failed: "red", breached: "red", archived: "zinc" };
+
+  return (
+    <div className="w-full max-w-md mx-auto">
+      <SectionHeader>Accounts</SectionHeader>
+
+      {loading && <div className="text-zinc-600 text-xs px-4 py-6 text-center" style={mono}>Loading...</div>}
+
+      {!loading && accounts.length === 0 && !showForm && (
+        <div className="border border-zinc-700 bg-zinc-900 px-4 py-8 text-center">
+          <p className="text-zinc-500 text-xs mb-3" style={mono}>No accounts yet.</p>
+        </div>
+      )}
+
+      {!loading && accounts.map((acc) => {
+        const accTrades = trades.filter((t) => t.account_id === acc.id && t.status === "closed");
+        const pnl = accTrades.reduce((sum, t) => sum + (Number.parseFloat(t.pnl) || 0), 0);
+        const balance = Number.parseFloat(acc.starting_balance) + pnl;
+        const winCount = accTrades.filter((t) => Number.parseFloat(t.pnl) > 0).length;
+        const winRate = accTrades.length ? ((winCount / accTrades.length) * 100).toFixed(0) : null;
+
+        return (
+          <Block key={acc.id} className="mb-3">
+            <div className="px-4 py-3 flex items-center justify-between border-b border-zinc-800">
+              <div>
+                <div className="text-zinc-200 text-sm font-medium" style={mono}>{acc.name}</div>
+                <div className="text-zinc-600 text-xs" style={mono}>{acc.broker} · {acc.account_type.replace("_", " ")}</div>
+              </div>
+              <select
+                value={acc.status}
+                onChange={(e) => updateStatus(acc.id, e.target.value)}
+                className={`bg-zinc-900 border border-${statusColor[acc.status]}-800 text-${statusColor[acc.status]}-400 text-xs px-2 py-1 uppercase tracking-wider`}
+                style={mono}
+              >
+                {ACCOUNT_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="px-4 py-3 flex items-center justify-between">
+              <Label>Balance</Label>
+              <span className={`text-lg font-semibold tabular-nums ${pnl >= 0 ? "text-emerald-400" : "text-red-400"}`} style={mono}>
+                {fmt(balance)}
+              </span>
+            </div>
+            <Divider />
+            <div className="px-4 py-2 flex justify-between text-xs" style={mono}>
+              <span className="text-zinc-600">{accTrades.length} closed trade{accTrades.length !== 1 ? "s" : ""}</span>
+              <span className="text-zinc-600">{winRate !== null ? `${winRate}% win rate` : "—"}</span>
+            </div>
+            <Divider />
+            <div className="px-4 py-2 flex justify-end">
+              <button onClick={() => deleteAccount(acc.id)} className="text-red-500 text-xs hover:text-red-400" style={mono}>Delete</button>
+            </div>
+          </Block>
+        );
+      })}
+
+      {!showForm && (
+        <button
+          onClick={() => setShowForm(true)}
+          className="w-full border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 text-xs tracking-widest uppercase py-3 transition-colors"
+          style={mono}
+        >
+          + Add Account
+        </button>
+      )}
+
+      {showForm && (
+        <Block>
+          <Row label="Name"><StyledInput type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. FTMO Phase 1" /></Row>
+          <Divider />
+          <Row label="Broker">
+            <StyledSelect value={broker} onChange={(e) => setBroker(e.target.value)}>
+              {BROKERS.map((b) => <option key={b} value={b}>{b}</option>)}
+            </StyledSelect>
+          </Row>
+          <Divider />
+          <Row label="Type">
+            <StyledSelect value={accountType} onChange={(e) => setAccountType(e.target.value)}>
+              {ACCOUNT_TYPES.map((t) => <option key={t} value={t}>{t.replace("_", " ")}</option>)}
+            </StyledSelect>
+          </Row>
+          <Divider />
+          <Row label="Starting Balance">
+            <StyledInput value={startingBalance} step={100} min={0} onChange={(e) => setStartingBalance(e.target.value)} />
+          </Row>
+          <Divider />
+          <div className="px-4 py-3 flex gap-2">
+            <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 text-xs tracking-widest uppercase bg-zinc-800 text-zinc-300 border border-zinc-700 hover:bg-zinc-700" style={mono}>Cancel</button>
+            <button onClick={createAccount} disabled={isSubmitting || !name.trim()} className="flex-1 py-2.5 text-xs tracking-widest uppercase bg-emerald-950 text-emerald-400 border border-emerald-800 hover:bg-emerald-900 disabled:opacity-50" style={mono}>
+              {isSubmitting ? "Adding..." : "Add"}
+            </button>
+          </div>
+        </Block>
+      )}
+    </div>
+  );
+}
+
+// ─── PAGE 4: ECONOMIC CALENDAR ────────────────────────────────────────────────
+
+const EconomicCalendarWidget = memo(function EconomicCalendarWidget() {
+  const container = useRef();
+
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src = "https://www.tradays.com/c/js/widgets/calendar/widget.js?v=15";
+    script.type = "text/javascript";
+    script.async = true;
+    script.dataset.type = "calendar-widget";
+    script.innerHTML = JSON.stringify({
+      width: "100%",
+      height: "100%",
+      mode: "2",
+      fw: "react",
+      theme: 1,
+      timezone: "Africa/Nairobi",
+    });
+    container.current?.appendChild(script);
+  }, []);
+
+  return (
+    <div ref={container} style={{ minHeight: 500 }}>
+      <div id="economicCalendarWidget"></div>
+      <div className="ecw-copyright text-zinc-700 text-xs mt-1" style={mono}>
+        <a
+          href="https://www.metatrader.com/?utm_source=calendar.widget&utm_medium=link&utm_term=economic.calendar&utm_content=visit.mql5.calendar&utm_campaign=202.calendar.widget"
+          rel="noopener nofollow"
+          target="_blank"
+          className="hover:text-zinc-500"
+        >
+          MetaTrader World Markets
+        </a>
+      </div>
+    </div>
+  );
+});
+
+function CalendarPage() {
+  return (
+    <div className="w-full max-w-2xl mx-auto">
+      <SectionHeader>Economic Calendar</SectionHeader>
+      <Block>
+        <div className="px-2 py-2">
+          <EconomicCalendarWidget />
+        </div>
+      </Block>
+    </div>
+  );
+}
+
+// ─── PAGE 3.5: ANALYTICS ──────────────────────────────────────────────────────
+
+function groupPnL(trades, keyFn) {
+  const groups = {};
+  for (const t of trades) {
+    const key = keyFn(t);
+    if (!key) continue;
+    if (!groups[key]) groups[key] = { key, trades: 0, wins: 0, pnl: 0 };
+    groups[key].trades += 1;
+    groups[key].pnl += Number.parseFloat(t.pnl) || 0;
+    if (Number.parseFloat(t.pnl) > 0) groups[key].wins += 1;
+  }
+  return Object.values(groups)
+    .map((g) => ({ ...g, winRate: g.trades ? Math.round((g.wins / g.trades) * 100) : 0 }))
+    .sort((a, b) => b.pnl - a.pnl);
+}
+
+function AnalyticsTable({ title, rows }) {
+  if (!rows.length) return null;
+  return (
+    <Block className="mb-3">
+      <div className="px-4 py-2 border-b border-zinc-800">
+        <span className="text-zinc-500 text-xs tracking-widest uppercase" style={mono}>{title}</span>
+      </div>
+      {rows.map((r) => (
+        <div key={r.key} className="px-4 py-2 flex items-center justify-between border-b border-zinc-800 last:border-b-0">
+          <div className="flex items-center gap-2">
+            <span className="text-zinc-300 text-xs font-medium" style={mono}>{r.key}</span>
+            <span className="text-zinc-700 text-xs" style={mono}>{r.trades} trade{r.trades !== 1 ? "s" : ""} · {r.winRate}% win</span>
+          </div>
+          <span className={`text-sm font-semibold tabular-nums ${r.pnl >= 0 ? "text-emerald-400" : "text-red-400"}`} style={mono}>
+            {fmt(r.pnl)}
+          </span>
+        </div>
+      ))}
+    </Block>
+  );
+}
+
+function AnalyticsPage() {
+  const [trades, setTrades] = useState([]);
+  const [setups, setSetups] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      supabase.from("trades").select("*").eq("status", "closed").order("closed_at", { ascending: true }),
+      supabase.from("setups").select("id, name"),
+    ]).then(([tradeRes, setupRes]) => {
+      if (tradeRes.data) setTrades(tradeRes.data);
+      if (setupRes.data) setSetups(setupRes.data);
+      setLoading(false);
+    });
+  }, []);
+
+  if (loading) {
+    return <div className="text-zinc-600 text-xs px-4 py-6 text-center" style={mono}>Loading...</div>;
+  }
+
+  if (!trades.length) {
+    return (
+      <div className="w-full max-w-md mx-auto">
+        <SectionHeader>Analytics</SectionHeader>
+        <div className="border border-zinc-700 bg-zinc-900 px-4 py-8 text-center">
+          <p className="text-zinc-500 text-xs" style={mono}>No closed trades yet — analytics fill in as you close trades.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const totalPnl = trades.reduce((s, t) => s + (Number.parseFloat(t.pnl) || 0), 0);
+  const totalWins = trades.filter((t) => Number.parseFloat(t.pnl) > 0).length;
+  const overallWinRate = Math.round((totalWins / trades.length) * 100);
+
+  const setupNameById = Object.fromEntries(setups.map((s) => [s.id, s.name]));
+  const byAsset = groupPnL(trades, (t) => t.asset);
+  const bySession = groupPnL(trades, (t) => t.session);
+  const byDirection = groupPnL(trades, (t) => {
+    if (t.direction === "long") return "Long";
+    if (t.direction === "short") return "Short";
+    return null;
+  });
+  const bySetup = groupPnL(trades, (t) => t.setup_id ? (setupNameById[t.setup_id] || "Unknown setup") : null);
+  const byDayOfWeek = groupPnL(trades, (t) => {
+    if (!t.closed_at) return null;
+    return new Date(t.closed_at).toLocaleDateString("en-US", { weekday: "long" });
+  });
+
+  const equityCurve = trades.reduce((acc, t) => {
+    const prev = acc.length ? acc[acc.length - 1].equity : 0;
+    acc.push({ label: acc.length + 1, equity: prev + (Number.parseFloat(t.pnl) || 0) });
+    return acc;
+  }, []);
+
+  return (
+    <div className="w-full max-w-md mx-auto">
+      <SectionHeader>Analytics</SectionHeader>
+
+      <div className="border border-zinc-700 border-b-0 px-4 py-4 bg-zinc-900 flex items-center justify-between">
+        <Label>Total PnL</Label>
+        <span className={`text-2xl font-semibold tracking-tight tabular-nums ${totalPnl >= 0 ? "text-emerald-400" : "text-red-400"}`} style={mono}>
+          {fmt(totalPnl)}
+        </span>
+      </div>
+      <div className="border border-zinc-700 border-t-0 px-4 py-2 bg-zinc-900 flex items-center justify-between mb-4">
+        <Label>Win Rate</Label>
+        <span className="text-zinc-300 text-sm tabular-nums" style={mono}>{overallWinRate}% ({trades.length} trades)</span>
+      </div>
+
+      {equityCurve.length > 1 && (
+        <Block className="mb-4">
+          <div className="px-4 py-2 border-b border-zinc-800">
+            <span className="text-zinc-500 text-xs tracking-widest uppercase" style={mono}>Equity Curve</span>
+          </div>
+          <div className="px-2 py-3" style={{ height: 160 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={equityCurve}>
+                <XAxis dataKey="label" hide />
+                <YAxis hide domain={["auto", "auto"]} />
+                <ReferenceLine y={0} stroke="#3f3f46" />
+                <Tooltip
+                  formatter={(v) => fmt(v)}
+                  labelFormatter={() => ""}
+                  contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", fontSize: 11 }}
+                />
+                <Line type="monotone" dataKey="equity" stroke="#34d399" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </Block>
+      )}
+
+      <AnalyticsTable title="By Asset" rows={byAsset} />
+      <AnalyticsTable title="By Session" rows={bySession} />
+      <AnalyticsTable title="By Direction" rows={byDirection} />
+      <AnalyticsTable title="By Setup" rows={bySetup} />
+      <AnalyticsTable title="By Day of Week" rows={byDayOfWeek} />
+    </div>
+  );
+}
+
+// ─── PAGE 5: SETUPS ───────────────────────────────────────────────────────────
+
+function parseLines(text) {
+  return text.split("\n").map((l) => l.trim()).filter(Boolean);
+}
+
+function SetupsPage() {
+  const [setups, setSetups] = useState([]);
+  const [trades, setTrades] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [expandedId, setExpandedId] = useState(null);
+
+  const [name, setName] = useState("");
+  const [instrument, setInstrument] = useState("");
+  const [timeframe, setTimeframe] = useState("");
+  const [session, setSession] = useState("");
+  const [description, setDescription] = useState("");
+  const [entryCriteria, setEntryCriteria] = useState("");
+  const [exitCriteria, setExitCriteria] = useState("");
+  const [invalidations, setInvalidations] = useState("");
+
+  useEffect(() => {
+    Promise.all([
+      supabase.from("setups").select("*").order("created_at", { ascending: false }),
+      supabase.from("trades").select("setup_id, pnl, status"),
+    ]).then(([setupRes, tradeRes]) => {
+      if (setupRes.data) setSetups(setupRes.data);
+      if (tradeRes.data) setTrades(tradeRes.data);
+      setLoading(false);
+    });
+  }, []);
+
+  async function createSetup() {
+    if (!name.trim()) return;
+    setIsSubmitting(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data, error } = await supabase.from("setups").insert({
+      user_id: user?.id,
+      name: name.trim(),
+      instrument: instrument.trim() || null,
+      timeframe: timeframe.trim() || null,
+      session: session || null,
+      description: description.trim() || null,
+      entry_criteria: parseLines(entryCriteria),
+      exit_criteria: parseLines(exitCriteria),
+      invalidations: parseLines(invalidations),
+    }).select().single();
+    if (!error && data) {
+      setSetups((s) => [data, ...s]);
+      setName(""); setInstrument(""); setTimeframe(""); setSession("");
+      setDescription(""); setEntryCriteria(""); setExitCriteria(""); setInvalidations("");
+      setShowForm(false);
+    }
+    setIsSubmitting(false);
+  }
+
+  async function deleteSetup(id) {
+    const { error } = await supabase.from("setups").delete().eq("id", id);
+    if (!error) setSetups((s) => s.filter((x) => x.id !== id));
+  }
+
+  return (
+    <div className="w-full max-w-md mx-auto">
+      <SectionHeader>Setups</SectionHeader>
+
+      {loading && <div className="text-zinc-600 text-xs px-4 py-6 text-center" style={mono}>Loading...</div>}
+
+      {!loading && setups.length === 0 && !showForm && (
+        <div className="border border-zinc-700 bg-zinc-900 px-4 py-8 text-center mb-4">
+          <p className="text-zinc-500 text-xs" style={mono}>No setups yet. Define your trading models here and link trades to them from the planner.</p>
+        </div>
+      )}
+
+      {!loading && setups.map((s) => {
+        const setupTrades = trades.filter((t) => t.setup_id === s.id && t.status === "closed");
+        const pnl = setupTrades.reduce((sum, t) => sum + (parseFloat(t.pnl) || 0), 0);
+        const wins = setupTrades.filter((t) => parseFloat(t.pnl) > 0).length;
+        const winRate = setupTrades.length ? Math.round((wins / setupTrades.length) * 100) : null;
+        const isOpen = expandedId === s.id;
+
+        return (
+          <Block key={s.id} className="mb-3">
+            <button onClick={() => setExpandedId(isOpen ? null : s.id)} className="w-full px-4 py-3 flex items-center justify-between border-b border-zinc-800 text-left">
+              <div>
+                <div className="text-zinc-200 text-sm font-medium" style={mono}>{s.name}</div>
+                <div className="text-zinc-600 text-xs" style={mono}>
+                  {[s.instrument, s.timeframe, s.session].filter(Boolean).join(" · ") || "No details set"}
+                </div>
+              </div>
+              <span className="text-zinc-600 text-xs">{isOpen ? "▲" : "▼"}</span>
+            </button>
+
+            <div className="px-4 py-2 flex justify-between text-xs" style={mono}>
+              <span className="text-zinc-600">{setupTrades.length} closed trade{setupTrades.length !== 1 ? "s" : ""}</span>
+              <div className="flex items-center gap-3">
+                {winRate !== null && <span className="text-zinc-600">{winRate}% win</span>}
+                <span className={`font-semibold ${pnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmt(pnl)}</span>
+              </div>
+            </div>
+
+            {isOpen && (
+              <>
+                <Divider />
+                {s.description && (
+                  <div className="px-4 py-3 border-b border-zinc-800">
+                    <span className="text-zinc-500 text-xs">{s.description}</span>
+                  </div>
+                )}
+                {[["Entry Criteria", s.entry_criteria], ["Exit Criteria", s.exit_criteria], ["Invalidations", s.invalidations]].map(([label, items]) => (
+                  items && items.length > 0 && (
+                    <div key={label} className="px-4 py-3 border-b border-zinc-800">
+                      <span className="text-zinc-700 text-xs tracking-widest uppercase block mb-1.5">{label}</span>
+                      <ul className="space-y-1">
+                        {items.map((item) => (
+                          <li key={item} className="text-zinc-400 text-xs flex gap-2">
+                            <span className="text-zinc-700">·</span>{item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )
+                ))}
+                <div className="px-4 py-2 flex justify-end">
+                  <button onClick={() => deleteSetup(s.id)} className="text-red-500 text-xs hover:text-red-400" style={mono}>Delete</button>
+                </div>
+              </>
+            )}
+          </Block>
+        );
+      })}
+
+      {!showForm && (
+        <button
+          onClick={() => setShowForm(true)}
+          className="w-full border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 text-xs tracking-widest uppercase py-3 transition-colors"
+          style={mono}
+        >
+          + Add Setup
+        </button>
+      )}
+
+      {showForm && (
+        <Block>
+          <Row label="Name"><StyledInput type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Asian Range - London" /></Row>
+          <Divider />
+          <Row label="Instrument"><StyledInput type="text" value={instrument} onChange={(e) => setInstrument(e.target.value)} placeholder="e.g. GBPUSD" /></Row>
+          <Divider />
+          <Row label="Timeframe"><StyledInput type="text" value={timeframe} onChange={(e) => setTimeframe(e.target.value)} placeholder="e.g. M5" /></Row>
+          <Divider />
+          <Row label="Session">
+            <StyledSelect value={session} onChange={(e) => setSession(e.target.value)}>
+              <option value="">— None —</option>
+              {["Asian", "London", "NY", "Overlap"].map((s) => <option key={s} value={s}>{s}</option>)}
+            </StyledSelect>
+          </Row>
+          <Divider />
+          <div className="px-4 py-2">
+            <span className="text-zinc-700 text-xs tracking-widest uppercase block mb-1.5">Description</span>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2}
+              className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs px-2 py-1.5 focus:outline-none focus:border-zinc-600" style={mono} />
+          </div>
+          <Divider />
+          <div className="px-4 py-2">
+            <span className="text-zinc-700 text-xs tracking-widest uppercase block mb-1.5">Entry Criteria (one per line)</span>
+            <textarea value={entryCriteria} onChange={(e) => setEntryCriteria(e.target.value)} rows={3}
+              className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs px-2 py-1.5 focus:outline-none focus:border-zinc-600" style={mono} />
+          </div>
+          <Divider />
+          <div className="px-4 py-2">
+            <span className="text-zinc-700 text-xs tracking-widest uppercase block mb-1.5">Exit Criteria (one per line)</span>
+            <textarea value={exitCriteria} onChange={(e) => setExitCriteria(e.target.value)} rows={3}
+              className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs px-2 py-1.5 focus:outline-none focus:border-zinc-600" style={mono} />
+          </div>
+          <Divider />
+          <div className="px-4 py-2">
+            <span className="text-zinc-700 text-xs tracking-widest uppercase block mb-1.5">Invalidations (one per line)</span>
+            <textarea value={invalidations} onChange={(e) => setInvalidations(e.target.value)} rows={2}
+              className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs px-2 py-1.5 focus:outline-none focus:border-zinc-600" style={mono} />
+          </div>
+          <Divider />
+          <div className="px-4 py-3 flex gap-2">
+            <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 text-xs tracking-widest uppercase bg-zinc-800 text-zinc-300 border border-zinc-700 hover:bg-zinc-700" style={mono}>Cancel</button>
+            <button onClick={createSetup} disabled={isSubmitting || !name.trim()} className="flex-1 py-2.5 text-xs tracking-widest uppercase bg-emerald-950 text-emerald-400 border border-emerald-800 hover:bg-emerald-900 disabled:opacity-50" style={mono}>
+              {isSubmitting ? "Adding..." : "Add"}
+            </button>
+          </div>
+        </Block>
+      )}
+    </div>
+  );
+}
+
+// ─── PAGE 6: BACKTESTING ──────────────────────────────────────────────────────
+
+function BacktestPage() {
+  const [backtests, setBacktests] = useState([]);
+  const [setups, setSetups] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [filterSetup, setFilterSetup] = useState("");
+
+  const [bAsset, setBAsset] = useState("GBPUSD");
+  const [bDirection, setBDirection] = useState("long");
+  const [bSetupId, setBSetupId] = useState("");
+  const [bDate, setBDate] = useState("");
+  const [bResult, setBResult] = useState("win");
+  const [bR, setBR] = useState("");
+  const [bNotes, setBNotes] = useState("");
+
+  useEffect(() => {
+    Promise.all([
+      supabase.from("backtests").select("*").order("trade_date", { ascending: false }),
+      supabase.from("setups").select("id, name"),
+    ]).then(([btRes, setupRes]) => {
+      if (btRes.data) setBacktests(btRes.data);
+      if (setupRes.data) setSetups(setupRes.data);
+      setLoading(false);
+    });
+  }, []);
+
+  const setupNameById = Object.fromEntries(setups.map((s) => [s.id, s.name]));
+
+  async function addBacktest() {
+    setIsSubmitting(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data, error } = await supabase.from("backtests").insert({
+      user_id: user?.id,
+      asset: bAsset,
+      direction: bDirection,
+      setup_id: bSetupId || null,
+      trade_date: bDate || null,
+      result: bResult,
+      r_multiple: bR ? Number.parseFloat(bR) : null,
+      notes: bNotes.trim() || null,
+    }).select().single();
+    if (!error && data) {
+      setBacktests((b) => [data, ...b]);
+      setBDate(""); setBR(""); setBNotes("");
+      setShowForm(false);
+    }
+    setIsSubmitting(false);
+  }
+
+  async function deleteBacktest(id) {
+    const { error } = await supabase.from("backtests").delete().eq("id", id);
+    if (!error) setBacktests((b) => b.filter((x) => x.id !== id));
+  }
+
+  const filtered = filterSetup ? backtests.filter((b) => b.setup_id === filterSetup) : backtests;
+  const totalR = filtered.reduce((s, b) => s + (Number.parseFloat(b.r_multiple) || 0), 0);
+  const wins = filtered.filter((b) => b.result === "win").length;
+  const winRate = filtered.length ? Math.round((wins / filtered.length) * 100) : 0;
+  const expectancy = filtered.length ? (totalR / filtered.length).toFixed(2) : "0.00";
+
+  return (
+    <div className="w-full max-w-md mx-auto">
+      <SectionHeader>Backtesting</SectionHeader>
+
+      {setups.length > 0 && (
+        <div className="mb-3">
+          <StyledSelect value={filterSetup} onChange={(e) => setFilterSetup(e.target.value)}>
+            <option value="">All setups</option>
+            {setups.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </StyledSelect>
+        </div>
+      )}
+
+      {!loading && filtered.length > 0 && (
+        <Block className="mb-4">
+          <div className="px-4 py-3 flex items-center justify-between border-b border-zinc-800">
+            <Label>Total R</Label>
+            <span className={`text-lg font-semibold tabular-nums ${totalR >= 0 ? "text-emerald-400" : "text-red-400"}`} style={mono}>
+              {totalR >= 0 ? "+" : ""}{totalR.toFixed(2)}R
+            </span>
+          </div>
+          <div className="px-4 py-2 flex justify-between text-xs" style={mono}>
+            <span className="text-zinc-600">{filtered.length} sample{filtered.length !== 1 ? "s" : ""} · {winRate}% win</span>
+            <span className="text-zinc-600">Expectancy: {expectancy}R</span>
+          </div>
+        </Block>
+      )}
+
+      {loading && <div className="text-zinc-600 text-xs px-4 py-6 text-center" style={mono}>Loading...</div>}
+
+      {!loading && filtered.length === 0 && !showForm && (
+        <div className="border border-zinc-700 bg-zinc-900 px-4 py-8 text-center mb-4">
+          <p className="text-zinc-500 text-xs" style={mono}>No backtest samples logged yet.</p>
+        </div>
+      )}
+
+      {!loading && filtered.map((b) => (
+        <Block key={b.id} className="mb-2">
+          <div className="px-4 py-2.5 flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-zinc-200 text-xs font-medium" style={mono}>{b.asset}</span>
+                <Badge color={b.direction === "long" ? "emerald" : "red"}>{b.direction}</Badge>
+                {b.setup_id && <span className="text-zinc-600 text-xs" style={mono}>{setupNameById[b.setup_id] || "—"}</span>}
+              </div>
+              {b.trade_date && <div className="text-zinc-700 text-xs mt-0.5" style={mono}>{b.trade_date}</div>}
+              {b.notes && <div className="text-zinc-600 text-xs mt-1">{b.notes}</div>}
+            </div>
+            <div className="flex items-center gap-3 shrink-0">
+              <span className={`text-sm font-semibold tabular-nums ${getBacktestResultClass(b.result)}`} style={mono}>
+                {b.r_multiple != null ? `${Number.parseFloat(b.r_multiple) >= 0 ? "+" : ""}${b.r_multiple}R` : b.result}
+              </span>
+              <button onClick={() => deleteBacktest(b.id)} className="text-red-600 text-xs hover:text-red-400">✕</button>
+            </div>
+          </div>
+        </Block>
+      ))}
+
+      {!showForm && (
+        <button
+          onClick={() => setShowForm(true)}
+          className="w-full border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 text-xs tracking-widest uppercase py-3 transition-colors mt-2"
+          style={mono}
+        >
+          + Log Backtest Sample
+        </button>
+      )}
+
+      {showForm && (
+        <Block>
+          <Row label="Asset">
+            <StyledSelect value={bAsset} onChange={(e) => setBAsset(e.target.value)}>
+              {Object.keys(ASSETS).map((k) => <option key={k} value={k}>{k}</option>)}
+            </StyledSelect>
+          </Row>
+          <Divider />
+          <Row label="Direction">
+            <div className="flex gap-2">
+              {["long", "short"].map((d) => (
+                <button key={d} onClick={() => setBDirection(d)}
+                  className={`px-3 py-1 text-xs tracking-widest uppercase rounded-sm transition-colors ${getBacktestDirButtonClass(bDirection, d)}`} style={mono}>
+                  {d === "long" ? "▲ Long" : "▼ Short"}
+                </button>
+              ))}
+            </div>
+          </Row>
+          <Divider />
+          <Row label="Setup">
+            <StyledSelect value={bSetupId} onChange={(e) => setBSetupId(e.target.value)}>
+              <option value="">— None —</option>
+              {setups.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </StyledSelect>
+          </Row>
+          <Divider />
+          <Row label="Date"><StyledInput type="date" value={bDate} onChange={(e) => setBDate(e.target.value)} /></Row>
+          <Divider />
+          <Row label="Result">
+            <StyledSelect value={bResult} onChange={(e) => setBResult(e.target.value)}>
+              <option value="win">Win</option>
+              <option value="loss">Loss</option>
+              <option value="breakeven">Breakeven</option>
+            </StyledSelect>
+          </Row>
+          <Divider />
+          <Row label="R Multiple"><StyledInput value={bR} step={0.1} onChange={(e) => setBR(e.target.value)} placeholder="e.g. 2.5 or -1" /></Row>
+          <Divider />
+          <div className="px-4 py-2">
+            <span className="text-zinc-700 text-xs tracking-widest uppercase block mb-1.5">Notes</span>
+            <textarea value={bNotes} onChange={(e) => setBNotes(e.target.value)} rows={2}
+              className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs px-2 py-1.5 focus:outline-none focus:border-zinc-600" style={mono} />
+          </div>
+          <Divider />
+          <div className="px-4 py-3 flex gap-2">
+            <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 text-xs tracking-widest uppercase bg-zinc-800 text-zinc-300 border border-zinc-700 hover:bg-zinc-700" style={mono}>Cancel</button>
+            <button onClick={addBacktest} disabled={isSubmitting} className="flex-1 py-2.5 text-xs tracking-widest uppercase bg-emerald-950 text-emerald-400 border border-emerald-800 hover:bg-emerald-900 disabled:opacity-50" style={mono}>
+              {isSubmitting ? "Adding..." : "Add"}
+            </button>
+          </div>
+        </Block>
+      )}
     </div>
   );
 }
@@ -1053,6 +1887,11 @@ function App() {
 
         {page === "calc" && <MarginCalcPage />}
         {page === "journal" && <TradeJournalPage />}
+        {page === "accounts" && <AccountsPage />}
+        {page === "analytics" && <AnalyticsPage />}
+        {page === "setups" && <SetupsPage />}
+        {page === "backtest" && <BacktestPage />}
+        {page === "calendar" && <CalendarPage />}
       </div>
 
       {/* Delete Account Confirmation */}
